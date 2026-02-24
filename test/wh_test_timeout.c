@@ -78,7 +78,6 @@ static int _timeoutTestConnectCb(void* context, whCommConnected connected)
 static int whTest_TimeoutAesCbc(void)
 {
     int rc = 0;
-    WH_TEST_PRINT("Testing timeout AES CBC...\n");
 
     /* Transport memory configuration */
     uint8_t              req[TIMEOUT_TEST_BUFFER_SIZE]  = {0};
@@ -143,9 +142,6 @@ static int whTest_TimeoutAesCbc(void)
     whNvmConfig           n_conf[1] = {0};
     whNvmContext          nvm[1]    = {{0}};
 
-    WH_TEST_RETURN_ON_FAIL(whTest_NvmCfgBackend(
-        WH_NVM_TEST_BACKEND_FLASH, &nvm_setup, n_conf, fc_conf, fc, fcb));
-
     whServerCryptoContext crypto[1] = {0};
 
     whServerConfig  s_conf[1] = {{
@@ -157,6 +153,11 @@ static int whTest_TimeoutAesCbc(void)
     whServerContext server[1] = {0};
 
     timeoutTestServerCtx = server;
+
+    WH_TEST_PRINT("Testing timeout AES CBC...\n");
+
+    WH_TEST_RETURN_ON_FAIL(whTest_NvmCfgBackend(
+        WH_NVM_TEST_BACKEND_FLASH, &nvm_setup, n_conf, fc_conf, fc, fcb));
 
     WH_TEST_RETURN_ON_FAIL(wolfCrypt_Init());
     WH_TEST_RETURN_ON_FAIL(wh_Nvm_Init(nvm, n_conf));
@@ -237,7 +238,6 @@ static int whTest_TimeoutAesCbcOverride(void)
 {
     int rc       = 0;
     int cb_count = 0;
-    WH_TEST_PRINT("Testing timeout AES CBC with override callback...\n");
 
     /* Transport memory configuration */
     uint8_t              req[TIMEOUT_TEST_BUFFER_SIZE]  = {0};
@@ -302,9 +302,6 @@ static int whTest_TimeoutAesCbcOverride(void)
     whNvmConfig           n_conf[1] = {0};
     whNvmContext          nvm[1]    = {{0}};
 
-    WH_TEST_RETURN_ON_FAIL(whTest_NvmCfgBackend(
-        WH_NVM_TEST_BACKEND_FLASH, &nvm_setup, n_conf, fc_conf, fc, fcb));
-
     whServerCryptoContext crypto[1] = {0};
 
     whServerConfig  s_conf[1] = {{
@@ -316,6 +313,11 @@ static int whTest_TimeoutAesCbcOverride(void)
     whServerContext server[1] = {0};
 
     timeoutTestServerCtx = server;
+
+    WH_TEST_PRINT("Testing timeout AES CBC with override callback...\n");
+
+    WH_TEST_RETURN_ON_FAIL(whTest_NvmCfgBackend(
+        WH_NVM_TEST_BACKEND_FLASH, &nvm_setup, n_conf, fc_conf, fc, fcb));
 
     WH_TEST_RETURN_ON_FAIL(wolfCrypt_Init());
     WH_TEST_RETURN_ON_FAIL(wh_Nvm_Init(nvm, n_conf));
@@ -452,8 +454,6 @@ int whTest_TimeoutClientConfig(whClientConfig* config)
 #ifdef WOLFHSM_CFG_TEST_POSIX
 int whTest_TimeoutPosix(void)
 {
-    WH_TEST_PRINT("Testing timeout (POSIX)...\n");
-
     uint8_t              req[4096]      = {0};
     uint8_t              resp[4096]     = {0};
     whTransportMemConfig tmcf[1]        = {{
@@ -482,6 +482,8 @@ int whTest_TimeoutPosix(void)
     whClientConfig              cConf[1]  = {{
                       .comm = ccConf,
     }};
+
+    WH_TEST_PRINT("Testing timeout (POSIX)...\n");
 
     return whTest_TimeoutClientConfig(cConf);
 }

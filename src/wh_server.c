@@ -170,9 +170,10 @@ static int _wh_Server_HandleCommRequest(whServerContext* server,
         uint16_t req_size, const void* req_packet,
         uint16_t* out_resp_size, void* resp_packet)
 {
+    int rc = 0;
+
     (void)seq;
 
-    int rc = 0;
     switch (action) {
     case WH_MESSAGE_COMM_ACTION_INIT:
     {
@@ -273,6 +274,8 @@ static int _wh_Server_HandlePkcs11Request(whServerContext* server,
         uint16_t req_size, const void* req_packet,
         uint16_t *out_resp_size, void* resp_packet)
 {
+    int rc = 0;
+
     (void)server;
     (void)magic;
     (void)seq;
@@ -280,7 +283,6 @@ static int _wh_Server_HandlePkcs11Request(whServerContext* server,
     (void)req_packet;
     (void)resp_packet;
 
-    int rc = 0;
     switch (action) {
     /* TODO: Add PKCS11 message handling here */
     default:
@@ -292,6 +294,7 @@ static int _wh_Server_HandlePkcs11Request(whServerContext* server,
 
 int wh_Server_HandleRequestMessage(whServerContext* server)
 {
+    int rc = 0;
     uint16_t magic = 0;
     uint16_t kind = 0;
     uint16_t group = 0;
@@ -314,7 +317,7 @@ int wh_Server_HandleRequestMessage(whServerContext* server)
         return WH_ERROR_NOTREADY;
     }
 
-    int rc = wh_CommServer_RecvRequest(server->comm, &magic, &kind, &seq,
+    rc = wh_CommServer_RecvRequest(server->comm, &magic, &kind, &seq,
             &size, data);
     /* Got a packet? */
     if (rc == WH_ERROR_OK) {

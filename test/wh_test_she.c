@@ -733,7 +733,6 @@ static int wh_ClientServer_MemThreadTest(whTestSheClientFn clientFn)
     whServerCryptoContext crypto[1] = {0};
 
     whServerSheContext she[1];
-    memset(she, 0, sizeof(she));
 
     whServerConfig                  s_conf[1] = {{
        .comm_config = cs_conf,
@@ -742,6 +741,8 @@ static int wh_ClientServer_MemThreadTest(whTestSheClientFn clientFn)
        .she = she,
        .devId = INVALID_DEVID,
     }};
+
+    memset(she, 0, sizeof(she));
 
     WH_TEST_RETURN_ON_FAIL(wh_Nvm_Init(nvm, n_conf));
 
@@ -819,7 +820,6 @@ static int wh_She_TestMasterEcuKeyFallback(void)
     whServerCryptoContext crypto[1] = {0};
 
     whServerSheContext she[1];
-    memset(she, 0, sizeof(she));
 
     whServerConfig s_conf[1] = {{
         .comm_config = cs_conf,
@@ -828,6 +828,8 @@ static int wh_She_TestMasterEcuKeyFallback(void)
         .she         = she,
         .devId       = INVALID_DEVID,
     }};
+
+    memset(she, 0, sizeof(she));
 
     WH_TEST_RETURN_ON_FAIL(wh_Nvm_Init(nvm, n_conf));
     WH_TEST_RETURN_ON_FAIL(wolfCrypt_Init());

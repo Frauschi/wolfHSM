@@ -191,11 +191,17 @@ static int _getCryptoResponse(uint8_t* respBuf, uint16_t type,
 /** Implementations */
 int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size)
 {
-    int                          ret = WH_ERROR_OK;
-    whMessageCrypto_RngRequest*  req;
-    whMessageCrypto_RngResponse* res;
-    uint8_t*                     dataPtr;
-    uint8_t*                     reqData;
+    int                          ret     = WH_ERROR_OK;
+    whMessageCrypto_RngRequest*  req     = NULL;
+    whMessageCrypto_RngResponse* res     = NULL;
+    uint8_t*                     dataPtr = NULL;
+    uint8_t*                     reqData = NULL;
+
+    /* Calculate maximum data size client can request (subtract headers) */
+    const uint32_t client_max_data =
+        WOLFHSM_CFG_COMM_DATA_LEN -
+        sizeof(whMessageCrypto_GenericRequestHeader) -
+        sizeof(whMessageCrypto_RngRequest);
 
     if (ctx == NULL) {
         return WH_ERROR_BADARGS;
@@ -213,12 +219,6 @@ int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size)
 
     /* Setup request header */
     req = (whMessageCrypto_RngRequest*)reqData;
-
-    /* Calculate maximum data size client can request (subtract headers) */
-    const uint32_t client_max_data =
-        WOLFHSM_CFG_COMM_DATA_LEN -
-        sizeof(whMessageCrypto_GenericRequestHeader) -
-        sizeof(whMessageCrypto_RngRequest);
 
     while ((size > 0) && (ret == WH_ERROR_OK)) {
         /* Request Message */
@@ -348,26 +348,30 @@ int wh_Client_RngGenerateDma(whClientContext* ctx, uint8_t* out, uint32_t size)
 int wh_Client_AesCtr(whClientContext* ctx, Aes* aes, int enc, const uint8_t* in,
                      uint32_t len, uint8_t* out)
 {
-    int                             ret = WH_ERROR_OK;
-    whMessageCrypto_AesCtrRequest*  req;
-    whMessageCrypto_AesCtrResponse* res;
-    uint8_t*                        dataPtr;
-
-    if ((ctx == NULL) || (aes == NULL) || (in == NULL) || (out == NULL)) {
-        return WH_ERROR_BADARGS;
-    }
-
-    uint32_t       key_len = aes->keylen;
-    const uint8_t* key     = (const uint8_t*)(aes->devKey);
-    whKeyId        key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
-    uint8_t*       iv      = (uint8_t*)aes->reg;
-    uint32_t       iv_len  = AES_IV_SIZE;
-    uint32_t       left    = aes->left;
-    uint8_t*       tmp     = (uint8_t*)aes->tmp;
+    int                             ret     = WH_ERROR_OK;
+    whMessageCrypto_AesCtrRequest*  req     = NULL;
+    whMessageCrypto_AesCtrResponse* res     = NULL;
+    uint8_t*                        dataPtr = NULL;
+    uint32_t                        key_len = aes->keylen;
+    const uint8_t*                  key     = (const uint8_t*)(aes->devKey);
+    whKeyId                         key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    uint8_t*                        iv      = (uint8_t*)aes->reg;
+    uint32_t                        iv_len  = AES_IV_SIZE;
+    uint32_t                        left    = aes->left;
+    uint8_t*                        tmp     = (uint8_t*)aes->tmp;
+    uint8_t*                        req_in  = NULL;
+    uint8_t*                        req_key = NULL;
+    uint8_t*                        req_iv  = NULL;
+    uint8_t*                        req_tmp = NULL;
+    uint64_t                        req_len = 0;
 
     uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
     uint16_t action = WC_ALGO_TYPE_CIPHER;
     uint16_t type   = WC_CIPHER_AES_CTR;
+
+    if ((ctx == NULL) || (aes == NULL) || (in == NULL) || (out == NULL)) {
+        return WH_ERROR_BADARGS;
+    }
 
     /* Get data buffer */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
@@ -375,16 +379,15 @@ int wh_Client_AesCtr(whClientContext* ctx, Aes* aes, int enc, const uint8_t* in,
         return WH_ERROR_BADARGS;
     }
     /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_AesCtrRequest*)_createCryptoRequest(
-        dataPtr, WC_CIPHER_AES_CTR, ctx->cryptoAffinity);
-    uint8_t* req_in  = (uint8_t*)(req + 1);
-    uint8_t* req_key = req_in + len;
-    uint8_t* req_iv  = req_key + key_len;
-    uint8_t* req_tmp = req_iv + iv_len;
-    uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + len + key_len + iv_len +
-                       AES_BLOCK_SIZE;
-    WH_DEBUG_CLIENT_VERBOSE("enc:%d keylen:%d ivsz:%d insz:%d reqsz:%u "
+    req     = (whMessageCrypto_AesCtrRequest*)_createCryptoRequest(
+                dataPtr, WC_CIPHER_AES_CTR, ctx->cryptoAffinity);
+    req_in  = (uint8_t*)(req + 1);
+    req_key = req_in + len;
+    req_iv  = req_key + key_len;
+    req_tmp = req_iv + iv_len;
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                len + key_len + iv_len + AES_BLOCK_SIZE;
+    WH_DEBUG_CLIENT_VERBOSE("enc:%d keylen:%d ivsz:%d insz:%d reqsz:%lu "
            "left:%d\n",
            enc, key_len, iv_len, len, req_len, left);
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
@@ -461,14 +464,17 @@ int wh_Client_AesCtrDma(whClientContext* ctx, Aes* aes, int enc,
     uint8_t*                          dataPtr = NULL;
     uintptr_t                         inAddr  = 0;
     uintptr_t                         outAddr = 0;
+    const uint8_t*                    key     = NULL;
+    uint8_t*                          iv      = (uint8_t*)aes->reg;
+    uint8_t*                          tmp     = (uint8_t*)aes->tmp;
+    uint8_t*                          req_iv  = NULL;
+    uint8_t*                          req_tmp = NULL;
+    uint8_t*                          req_key = NULL;
+    uint16_t                          req_len = 0;
 
     uint16_t group  = WH_MESSAGE_GROUP_CRYPTO_DMA;
     uint16_t action = WC_ALGO_TYPE_CIPHER;
     uint16_t type   = WC_CIPHER_AES_CTR;
-
-    const uint8_t* key     = NULL;
-    uint8_t*       iv      = (uint8_t*)aes->reg;
-    uint8_t*       tmp     = (uint8_t*)aes->tmp;
 
     if (ctx == NULL || aes == NULL || in == NULL || out == NULL ) {
         return WH_ERROR_BADARGS;
@@ -481,13 +487,13 @@ int wh_Client_AesCtrDma(whClientContext* ctx, Aes* aes, int enc,
     }
 
     /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_AesCtrDmaRequest*)_createCryptoRequest(
-        dataPtr, WC_CIPHER_AES_CTR, ctx->cryptoAffinity);
-    uint8_t* req_iv = (uint8_t*)req + sizeof(whMessageCrypto_AesCtrDmaRequest);
-    uint8_t* req_tmp = req_iv + AES_IV_SIZE;
-    uint8_t* req_key = req_tmp + AES_BLOCK_SIZE;
-    uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + AES_IV_SIZE + AES_BLOCK_SIZE;
+    req     = (whMessageCrypto_AesCtrDmaRequest*)_createCryptoRequest(
+                dataPtr, WC_CIPHER_AES_CTR, ctx->cryptoAffinity);
+    req_iv  = (uint8_t*)req + sizeof(whMessageCrypto_AesCtrDmaRequest);
+    req_tmp = req_iv + AES_IV_SIZE;
+    req_key = req_tmp + AES_BLOCK_SIZE;
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                AES_IV_SIZE + AES_BLOCK_SIZE;
 
     /* Setup request packet */
     memset(req, 0, sizeof(*req));
@@ -597,9 +603,19 @@ int wh_Client_AesEcb(whClientContext* ctx, Aes* aes, int enc, const uint8_t* in,
 {
     int                             ret    = WH_ERROR_OK;
     uint16_t                        blocks = len / AES_BLOCK_SIZE;
-    whMessageCrypto_AesEcbRequest*  req;
-    whMessageCrypto_AesEcbResponse* res;
-    uint8_t*                        dataPtr;
+    whMessageCrypto_AesEcbRequest*  req = NULL;
+    whMessageCrypto_AesEcbResponse* res = NULL;
+    uint8_t*                        dataPtr = NULL;
+    uint32_t                        key_len = aes->keylen;
+    const uint8_t*                  key     = (const uint8_t*)(aes->devKey);
+    whKeyId                         key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    uint8_t*                        req_in  = NULL;
+    uint8_t*                        req_key = NULL;
+    uint16_t                        req_len = 0;
+
+    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
+    uint16_t action = WC_ALGO_TYPE_CIPHER;
+    uint16_t type   = WC_CIPHER_AES_ECB;
 
     if (blocks == 0) {
         /* Nothing to do. */
@@ -611,27 +627,19 @@ int wh_Client_AesEcb(whClientContext* ctx, Aes* aes, int enc, const uint8_t* in,
         return WH_ERROR_BADARGS;
     }
 
-    uint32_t       key_len = aes->keylen;
-    const uint8_t* key     = (const uint8_t*)(aes->devKey);
-    whKeyId        key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
-
-    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
-    uint16_t action = WC_ALGO_TYPE_CIPHER;
-    uint16_t type   = WC_CIPHER_AES_ECB;
-
     /* Get data buffer */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
         return WH_ERROR_BADARGS;
     }
-    /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_AesEcbRequest*)_createCryptoRequest(
-        dataPtr, WC_CIPHER_AES_ECB, ctx->cryptoAffinity);
-    uint8_t* req_in  = (uint8_t*)(req + 1);
-    uint8_t* req_key = req_in + len;
-    uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + len + key_len;
 
+    /* Setup generic header and get pointer to request data */
+    req     = (whMessageCrypto_AesEcbRequest*)_createCryptoRequest(
+                dataPtr, WC_CIPHER_AES_ECB, ctx->cryptoAffinity);
+    req_in  = (uint8_t*)(req + 1);
+    req_key = req_in + len;
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                len + key_len;
 
     WH_DEBUG_CLIENT_VERBOSE("enc:%d keylen:%d insz:%d reqsz:%u blocks:%u \n",
            enc, (int)key_len, (int)len, (unsigned int)req_len,
@@ -690,12 +698,13 @@ int wh_Client_AesEcbDma(whClientContext* ctx, Aes* aes, int enc,
     uint8_t*                          dataPtr = NULL;
     uintptr_t                         inAddr  = 0;
     uintptr_t                         outAddr = 0;
+    const uint8_t*                    key     = NULL;
+    uint8_t*                          req_key = NULL;
+    uint16_t                          req_len = 0;
 
-    uint16_t       group  = WH_MESSAGE_GROUP_CRYPTO_DMA;
-    uint16_t       action = WC_ALGO_TYPE_CIPHER;
-    uint16_t       type   = WC_CIPHER_AES_ECB;
-
-    const uint8_t* key    = NULL;
+    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO_DMA;
+    uint16_t action = WC_ALGO_TYPE_CIPHER;
+    uint16_t type   = WC_CIPHER_AES_ECB;
 
     if (ctx == NULL || aes == NULL || in == NULL || out == NULL) {
         return WH_ERROR_BADARGS;
@@ -712,11 +721,10 @@ int wh_Client_AesEcbDma(whClientContext* ctx, Aes* aes, int enc,
     }
 
     /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_AesEcbDmaRequest*)_createCryptoRequest(
-        dataPtr, WC_CIPHER_AES_ECB, ctx->cryptoAffinity);
-    uint8_t* req_key = (uint8_t*)req + sizeof(whMessageCrypto_AesEcbDmaRequest);
-    uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req);
+    req     = (whMessageCrypto_AesEcbDmaRequest*)_createCryptoRequest(
+                dataPtr, WC_CIPHER_AES_ECB, ctx->cryptoAffinity);
+    req_key = (uint8_t*)req + sizeof(whMessageCrypto_AesEcbDmaRequest);
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     /* Setup request packet */
     memset(req, 0, sizeof(*req));
@@ -807,11 +815,24 @@ int wh_Client_AesEcbDma(whClientContext* ctx, Aes* aes, int enc,
 int wh_Client_AesCbc(whClientContext* ctx, Aes* aes, int enc, const uint8_t* in,
                      uint32_t len, uint8_t* out)
 {
-    int                             ret    = WH_ERROR_OK;
-    uint16_t                        blocks = len / AES_BLOCK_SIZE;
-    whMessageCrypto_AesCbcRequest*  req;
-    whMessageCrypto_AesCbcResponse* res;
-    uint8_t*                        dataPtr;
+    int                             ret     = WH_ERROR_OK;
+    uint16_t                        blocks  = len / AES_BLOCK_SIZE;
+    whMessageCrypto_AesCbcRequest*  req     = NULL;
+    whMessageCrypto_AesCbcResponse* res     = NULL;
+    uint8_t*                        dataPtr = NULL;
+    uint32_t                        key_len = aes->keylen;
+    const uint8_t*                  key     = (const uint8_t*)(aes->devKey);
+    whKeyId                         key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    uint8_t*                        iv      = (uint8_t*)aes->reg;
+    uint32_t                        iv_len  = AES_IV_SIZE;
+    uint8_t*                        req_in  = NULL;
+    uint8_t*                        req_key = NULL;
+    uint8_t*                        req_iv  = NULL;
+    uint64_t                        req_len = 0;
+
+    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
+    uint16_t action = WC_ALGO_TYPE_CIPHER;
+    uint16_t type   = WC_CIPHER_AES_CBC;
 
     if (blocks == 0) {
         /* Nothing to do. */
@@ -823,29 +844,19 @@ int wh_Client_AesCbc(whClientContext* ctx, Aes* aes, int enc, const uint8_t* in,
         return WH_ERROR_BADARGS;
     }
 
-    uint32_t       key_len     = aes->keylen;
-    const uint8_t* key         = (const uint8_t*)(aes->devKey);
-    whKeyId        key_id      = WH_DEVCTX_TO_KEYID(aes->devCtx);
-    uint8_t*       iv          = (uint8_t*)aes->reg;
-    uint32_t       iv_len      = AES_IV_SIZE;
-
-    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
-    uint16_t action = WC_ALGO_TYPE_CIPHER;
-    uint16_t type   = WC_CIPHER_AES_CBC;
-
     /* Get data buffer */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
         return WH_ERROR_BADARGS;
     }
     /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_AesCbcRequest*)_createCryptoRequest(
-        dataPtr, WC_CIPHER_AES_CBC, ctx->cryptoAffinity);
-    uint8_t* req_in  = (uint8_t*)(req + 1);
-    uint8_t* req_key = req_in + len;
-    uint8_t* req_iv  = req_key + key_len;
-    uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + len + key_len + iv_len;
+    req     = (whMessageCrypto_AesCbcRequest*)_createCryptoRequest(
+                dataPtr, WC_CIPHER_AES_CBC, ctx->cryptoAffinity);
+    req_in  = (uint8_t*)(req + 1);
+    req_key = req_in + len;
+    req_iv  = req_key + key_len;
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                len + key_len + iv_len;
 
     WH_DEBUG_CLIENT_VERBOSE("enc:%d keylen:%d ivsz:%d insz:%d reqsz:%u "
            "blocks:%u\n",
@@ -913,13 +924,15 @@ int wh_Client_AesCbcDma(whClientContext* ctx, Aes* aes, int enc,
     uint8_t*                          dataPtr = NULL;
     uintptr_t                         inAddr  = 0;
     uintptr_t                         outAddr = 0;
+    const uint8_t*                    key     = NULL;
+    uint8_t*                          iv      = (uint8_t*)aes->reg;
+    uint8_t*                          req_iv  = NULL;
+    uint8_t*                          req_key = NULL;
+    uint16_t                          req_len = 0;
 
     uint16_t       group  = WH_MESSAGE_GROUP_CRYPTO_DMA;
     uint16_t       action = WC_ALGO_TYPE_CIPHER;
     uint16_t       type   = WC_CIPHER_AES_CBC;
-
-    const uint8_t* key    = NULL;
-    uint8_t*       iv     = (uint8_t*)aes->reg;
 
     if (ctx == NULL || aes == NULL || in == NULL || out == NULL) {
         return WH_ERROR_BADARGS;
@@ -936,12 +949,12 @@ int wh_Client_AesCbcDma(whClientContext* ctx, Aes* aes, int enc,
     }
 
     /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_AesCbcDmaRequest*)_createCryptoRequest(
-        dataPtr, WC_CIPHER_AES_CBC, ctx->cryptoAffinity);
-    uint8_t* req_iv = (uint8_t*)req + sizeof(whMessageCrypto_AesCbcDmaRequest);
-    uint8_t* req_key = req_iv + AES_IV_SIZE;
-    uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + AES_IV_SIZE;
+    req     = (whMessageCrypto_AesCbcDmaRequest*)_createCryptoRequest(
+                dataPtr, WC_CIPHER_AES_CBC, ctx->cryptoAffinity);
+    req_iv  = (uint8_t*)req + sizeof(whMessageCrypto_AesCbcDmaRequest);
+    req_key = req_iv + AES_IV_SIZE;
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                AES_IV_SIZE;
 
     /* Setup request packet */
     memset(req, 0, sizeof(*req));
@@ -1156,7 +1169,24 @@ int wh_Client_AesGcm(whClientContext* ctx, Aes* aes, int enc, const uint8_t* in,
                      const uint8_t* dec_tag, uint8_t* enc_tag, uint32_t tag_len,
                      uint8_t* out)
 {
-    int ret = WH_ERROR_OK;
+    int                             ret        = WH_ERROR_OK;
+    whMessageCrypto_AesGcmRequest*  req        = NULL;
+    whMessageCrypto_AesGcmResponse* res        = NULL;
+    uint8_t*                        dataPtr    = NULL;
+    uint32_t                        key_len    = aes->keylen;
+    const uint8_t*                  key        = (const uint8_t*)(aes->devKey);
+    whKeyId                         key_id     = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    uint8_t*                        req_in     = NULL;
+    uint8_t*                        req_key    = NULL;
+    uint8_t*                        req_iv     = NULL;
+    uint8_t*                        req_authin = NULL;
+    uint8_t*                        req_tag    = NULL;
+    uint64_t                        req_len    = 0;
+
+    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
+    uint16_t action = WC_ALGO_TYPE_CIPHER;
+    uint16_t type   = WC_CIPHER_AES_GCM;
+
 
     if ((ctx == NULL) || (aes == NULL) || ((in == NULL) && (len > 0)) ||
         ((iv == NULL) && (iv_len > 0)) ||
@@ -1165,35 +1195,23 @@ int wh_Client_AesGcm(whClientContext* ctx, Aes* aes, int enc, const uint8_t* in,
         return WH_ERROR_BADARGS;
     }
 
-    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
-    uint16_t action = WC_ALGO_TYPE_CIPHER;
-    uint16_t type   = WC_CIPHER_AES_GCM;
-
-    uint32_t       key_len = aes->keylen;
-    const uint8_t* key     = (const uint8_t*)(aes->devKey);
-    whKeyId        key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
-
-
     /* Get data buffer */
-    uint8_t* dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
         return WH_ERROR_BADARGS;
     }
 
     /* Setup generic header and get pointer to request data */
-    whMessageCrypto_AesGcmRequest* req =
-        (whMessageCrypto_AesGcmRequest*)_createCryptoRequest(
-            dataPtr, WC_CIPHER_AES_GCM, ctx->cryptoAffinity);
-
-    uint8_t* req_in     = (uint8_t*)(req + 1);
-    uint8_t* req_key    = req_in + len;
-    uint8_t* req_iv     = req_key + key_len;
-    uint8_t* req_authin = req_iv + iv_len;
-    uint8_t* req_tag    = req_authin + authin_len;
-
-    uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + len + key_len + iv_len + authin_len +
-                       ((enc == 0) ? tag_len : 0);
+    req        = (whMessageCrypto_AesGcmRequest*)_createCryptoRequest(
+                    dataPtr, WC_CIPHER_AES_GCM, ctx->cryptoAffinity);
+    req_in     = (uint8_t*)(req + 1);
+    req_key    = req_in + len;
+    req_iv     = req_key + key_len;
+    req_authin = req_iv + iv_len;
+    req_tag    = req_authin + authin_len;
+    req_len    = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                    len + key_len + iv_len + authin_len +
+                    ((enc == 0) ? tag_len : 0);
 
     WH_DEBUG_CLIENT_VERBOSE("AESGCM: enc:%d keylen:%d ivsz:%d insz:%d authinsz:%d "
            "authtagsz:%d reqsz:%u\n",
@@ -1251,7 +1269,6 @@ int wh_Client_AesGcm(whClientContext* ctx, Aes* aes, int enc, const uint8_t* in,
 
         if (ret == WH_ERROR_OK) {
             /* Get response */
-            whMessageCrypto_AesGcmResponse* res;
             ret = _getCryptoResponse(dataPtr, type, (uint8_t**)&res);
             /* wolfCrypt allows positive error codes on success in some
              * scenarios */
@@ -1297,18 +1314,22 @@ int wh_Client_AesGcmDma(whClientContext* ctx, Aes* aes, int enc,
                         uint32_t authin_len, const uint8_t* dec_tag,
                         uint8_t* enc_tag, uint32_t tag_len, uint8_t* out)
 {
-    int                               ret         = WH_ERROR_OK;
-    whMessageCrypto_AesGcmDmaRequest* req         = NULL;
-    uint8_t*                          dataPtr     = NULL;
-    uintptr_t                         inAddr      = 0;
-    uintptr_t                         outAddr     = 0;
-    uintptr_t                         aadAddr     = 0;
+    int                                ret     = WH_ERROR_OK;
+    whMessageCrypto_AesGcmDmaRequest*  req     = NULL;
+    whMessageCrypto_AesGcmDmaResponse* res = NULL;
+    uint8_t*                           dataPtr = NULL;
+    uintptr_t                          inAddr  = 0;
+    uintptr_t                          outAddr = 0;
+    uintptr_t                          aadAddr = 0;
+    const uint8_t*                     key     = NULL;
+    uint8_t*                           req_iv  = NULL;
+    uint8_t*                           req_tag = NULL;
+    uint8_t*                           req_key = NULL;
+    uint64_t                           req_len = 0;
 
     uint16_t group  = WH_MESSAGE_GROUP_CRYPTO_DMA;
     uint16_t action = WC_ALGO_TYPE_CIPHER;
     uint16_t type   =  WC_CIPHER_AES_GCM;
-
-    const uint8_t* key    = NULL;
 
     if (ctx == NULL || aes == NULL) {
         return WH_ERROR_BADARGS;
@@ -1337,13 +1358,13 @@ int wh_Client_AesGcmDma(whClientContext* ctx, Aes* aes, int enc,
     }
 
     /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_AesGcmDmaRequest*)_createCryptoRequest(
-        dataPtr, WC_CIPHER_AES_GCM, ctx->cryptoAffinity);
-    uint8_t* req_iv = (uint8_t*)req + sizeof(whMessageCrypto_AesGcmDmaRequest);
-    uint8_t* req_tag = req_iv + iv_len;
-    uint8_t* req_key = req_tag + (enc != 0 ? 0 : tag_len);
-    uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + iv_len + (enc != 0 ? 0 : tag_len);
+    req     = (whMessageCrypto_AesGcmDmaRequest*)_createCryptoRequest(
+                dataPtr, WC_CIPHER_AES_GCM, ctx->cryptoAffinity);
+    req_iv  = (uint8_t*)req + sizeof(whMessageCrypto_AesGcmDmaRequest);
+    req_tag = req_iv + iv_len;
+    req_key = req_tag + (enc != 0 ? 0 : tag_len);
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                iv_len + (enc != 0 ? 0 : tag_len);
 
     /* Setup request packet */
     memset(req, 0, sizeof(*req));
@@ -1426,7 +1447,6 @@ int wh_Client_AesGcmDma(whClientContext* ctx, Aes* aes, int enc,
 
         if (ret == WH_ERROR_OK) {
             /* Get response */
-            whMessageCrypto_AesGcmDmaResponse* res;
             ret = _getCryptoResponse(dataPtr, type, (uint8_t**)&res);
             /* wolfCrypt allows positive error codes on success in some
              * scenarios */
@@ -1768,11 +1788,9 @@ int wh_Client_EccSharedSecret(whClientContext* ctx, ecc_key* priv_key,
                    (unsigned int)req->privateKeyId,
                    (unsigned int)req->publicKeyId);
             if (ret == WH_ERROR_OK) {
+                uint16_t res_len;
                 /* Server will evict.  Reset our flags */
                 pub_evict = prv_evict = 0;
-
-                /* Response Message */
-                uint16_t res_len;
 
                 /* Recv Response */
                 do {
@@ -1861,7 +1879,7 @@ int wh_Client_EccSign(whClientContext* ctx, ecc_key* key, const uint8_t* hash,
         uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
         uint16_t action = WC_ALGO_TYPE_PK;
 
-        uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
+        uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
                            sizeof(*req) + hash_len;
         uint32_t options = 0;
 
@@ -1904,11 +1922,9 @@ int wh_Client_EccSign(whClientContext* ctx, ecc_key* key, const uint8_t* hash,
             ret = wh_Client_SendRequest(ctx, group, action, req_len,
                                         (uint8_t*)dataPtr);
             if (ret == WH_ERROR_OK) {
+                uint16_t res_len = 0;
                 /* Server will evict at this point. Reset evict */
                 evict = 0;
-
-                /* Response Message */
-                uint16_t res_len = 0;
 
                 /* Recv Response */
                 do {
@@ -2003,7 +2019,7 @@ int wh_Client_EccVerify(whClientContext* ctx, ecc_key* key, const uint8_t* sig,
         uint16_t action  = WC_ALGO_TYPE_PK;
         uint32_t options = 0;
 
-        uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
+        uint32_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
                            sizeof(whMessageCrypto_EccVerifyRequest) + sig_len +
                            hash_len;
 
@@ -2059,10 +2075,9 @@ int wh_Client_EccVerify(whClientContext* ctx, ecc_key* key, const uint8_t* sig,
                                         (uint8_t*)dataPtr);
 
             if (ret == WH_ERROR_OK) {
+                uint16_t res_len = 0;
                 /* Server will evict at this point. Reset evict */
                 evict = 0;
-                /* Response Message */
-                uint16_t res_len = 0;
 
                 /* Recv Response */
                 do {
@@ -2574,6 +2589,11 @@ static int _Ed25519MakeKey(whClientContext* ctx, whKeyId* inout_key_id,
     uint8_t*                               dataPtr = NULL;
     whMessageCrypto_Ed25519KeyGenRequest*  req     = NULL;
     whMessageCrypto_Ed25519KeyGenResponse* res     = NULL;
+    uint16_t                               req_len = 0;
+    uint16_t                               res_len = 0;
+
+    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
+    uint16_t action = WC_ALGO_TYPE_PK;
 
     if (ctx == NULL || ((label_len != 0) && (label == NULL))) {
         return WH_ERROR_BADARGS;
@@ -2588,13 +2608,9 @@ static int _Ed25519MakeKey(whClientContext* ctx, whKeyId* inout_key_id,
         return WH_ERROR_BADARGS;
     }
 
-    req = (whMessageCrypto_Ed25519KeyGenRequest*)_createCryptoRequest(
-        dataPtr, WC_PK_TYPE_ED25519_KEYGEN, ctx->cryptoAffinity);
-
-    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
-    uint16_t action = WC_ALGO_TYPE_PK;
-    uint16_t req_len =
-        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    req     = (whMessageCrypto_Ed25519KeyGenRequest*)_createCryptoRequest(
+                dataPtr, WC_PK_TYPE_ED25519_KEYGEN, ctx->cryptoAffinity);
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
         return WH_ERROR_BADARGS;
@@ -2615,7 +2631,7 @@ static int _Ed25519MakeKey(whClientContext* ctx, whKeyId* inout_key_id,
     if (ret != WH_ERROR_OK) {
         return ret;
     }
-    uint16_t res_len = 0;
+
     do {
         ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
                                      (uint8_t*)dataPtr);
@@ -2684,8 +2700,15 @@ int wh_Client_Ed25519Sign(whClientContext* ctx, ed25519_key* key,
     whMessageCrypto_Ed25519SignResponse* res     = NULL;
     uint8_t*                             dataPtr = NULL;
 
-    whKeyId key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
-    int     evict  = 0;
+    whKeyId  key_id  = WH_DEVCTX_TO_KEYID(key->devCtx);
+    int      evict   = 0;
+    uint64_t req_len = 0;
+    uint8_t* req_msg = NULL;
+    uint8_t* req_ctx = NULL;
+
+    uint16_t group   = WH_MESSAGE_GROUP_CRYPTO;
+    uint16_t action  = WC_ALGO_TYPE_PK;
+    uint32_t options = 0;
 
     if ((ctx == NULL) || (key == NULL) || ((msg == NULL) && (msgLen > 0)) ||
         ((sig != NULL) && (inout_sig_len == NULL)) ||
@@ -2704,8 +2727,8 @@ int wh_Client_Ed25519Sign(whClientContext* ctx, ed25519_key* key,
         return WH_ERROR_BADARGS;
     }
 
-    uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + msgLen + contextLen;
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                msgLen + contextLen;
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
         return WH_ERROR_BADARGS;
     }
@@ -2722,20 +2745,15 @@ int wh_Client_Ed25519Sign(whClientContext* ctx, ed25519_key* key,
     }
 
     if (ret == WH_ERROR_OK) {
-        uint16_t group   = WH_MESSAGE_GROUP_CRYPTO;
-        uint16_t action  = WC_ALGO_TYPE_PK;
-        uint32_t options = 0;
-
         dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
         if (dataPtr == NULL) {
             return WH_ERROR_BADARGS;
         }
 
-        req = (whMessageCrypto_Ed25519SignRequest*)_createCryptoRequest(
-            dataPtr, WC_PK_TYPE_ED25519_SIGN, ctx->cryptoAffinity);
-
-        uint8_t* req_msg = (uint8_t*)(req + 1);
-        uint8_t* req_ctx = req_msg + msgLen;
+        req     = (whMessageCrypto_Ed25519SignRequest*)_createCryptoRequest(
+                    dataPtr, WC_PK_TYPE_ED25519_SIGN, ctx->cryptoAffinity);
+        req_msg = (uint8_t*)(req + 1);
+        req_ctx = req_msg + msgLen;
 
         if (evict != 0) {
             options |= WH_MESSAGE_CRYPTO_ED25519_SIGN_OPTIONS_EVICT;
@@ -2757,10 +2775,10 @@ int wh_Client_Ed25519Sign(whClientContext* ctx, ed25519_key* key,
         ret = wh_Client_SendRequest(ctx, group, action, req_len,
                                     (uint8_t*)dataPtr);
         if (ret == WH_ERROR_OK) {
+            uint16_t res_len = 0;
             /* Server will evict at this point. Reset evict */
             evict = 0;
 
-            uint16_t res_len = 0;
             do {
                 ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
                                              (uint8_t*)dataPtr);
@@ -2819,10 +2837,17 @@ int wh_Client_Ed25519Verify(whClientContext* ctx, ed25519_key* key,
     whMessageCrypto_Ed25519VerifyRequest*  req     = NULL;
     whMessageCrypto_Ed25519VerifyResponse* res     = NULL;
     uint8_t*                               dataPtr = NULL;
+
     whKeyId  key_id  = WH_DEVCTX_TO_KEYID(key->devCtx);
     int      evict   = 0;
-    uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + sigLen + msgLen + contextLen;
+    uint8_t* req_sig = NULL;
+    uint8_t* req_msg = NULL;
+    uint8_t* req_ctx = NULL;
+    uint64_t req_len = 0;
+
+    uint16_t group   = WH_MESSAGE_GROUP_CRYPTO;
+    uint16_t action  = WC_ALGO_TYPE_PK;
+    uint32_t options = 0;
 
     if ((ctx == NULL) || (key == NULL) || (sig == NULL) || (msg == NULL) ||
         (out_res == NULL) || ((context == NULL) && (contextLen > 0))) {
@@ -2840,6 +2865,8 @@ int wh_Client_Ed25519Verify(whClientContext* ctx, ed25519_key* key,
         return WH_ERROR_BADARGS;
     }
 
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                sigLen + msgLen + contextLen;
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
         return WH_ERROR_BADARGS;
     }
@@ -2858,21 +2885,16 @@ int wh_Client_Ed25519Verify(whClientContext* ctx, ed25519_key* key,
     }
 
     if (ret == WH_ERROR_OK) {
-        uint16_t group   = WH_MESSAGE_GROUP_CRYPTO;
-        uint16_t action  = WC_ALGO_TYPE_PK;
-        uint32_t options = 0;
-
         dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
         if (dataPtr == NULL) {
             return WH_ERROR_BADARGS;
         }
 
-        req = (whMessageCrypto_Ed25519VerifyRequest*)_createCryptoRequest(
-            dataPtr, WC_PK_TYPE_ED25519_VERIFY, ctx->cryptoAffinity);
-
-        uint8_t* req_sig = (uint8_t*)(req + 1);
-        uint8_t* req_msg = req_sig + sigLen;
-        uint8_t* req_ctx = req_msg + msgLen;
+        req     = (whMessageCrypto_Ed25519VerifyRequest*)_createCryptoRequest(
+                    dataPtr, WC_PK_TYPE_ED25519_VERIFY, ctx->cryptoAffinity);
+        req_sig = (uint8_t*)(req + 1);
+        req_msg = req_sig + sigLen;
+        req_ctx = req_msg + msgLen;
 
         if (evict != 0) {
             options |= WH_MESSAGE_CRYPTO_ED25519_VERIFY_OPTIONS_EVICT;
@@ -2895,10 +2917,10 @@ int wh_Client_Ed25519Verify(whClientContext* ctx, ed25519_key* key,
         ret = wh_Client_SendRequest(ctx, group, action, req_len,
                                     (uint8_t*)dataPtr);
         if (ret == WH_ERROR_OK) {
+            uint16_t res_len = 0;
             /* Server will evict at this point. Reset evict */
             evict = 0;
 
-            uint16_t res_len = 0;
             do {
                 ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
                                              (uint8_t*)dataPtr);
@@ -2951,6 +2973,12 @@ int wh_Client_Ed25519SignDma(whClientContext* ctx, ed25519_key* key,
     whKeyId  key_id   = WH_DEVCTX_TO_KEYID(key->devCtx);
     int      evict    = 0;
     uint32_t inSigLen = (inout_sig_len != NULL) ? *inout_sig_len : 0;
+    uint64_t req_len  = 0;
+    uint8_t* req_ctx  = NULL;
+
+    uint16_t group   = WH_MESSAGE_GROUP_CRYPTO_DMA;
+    uint16_t action  = WC_ALGO_TYPE_PK;
+    uint32_t options = 0;
 
     if ((ctx == NULL) || (key == NULL) || ((msg == NULL) && (msgLen > 0)) ||
         (sig == NULL) || (inout_sig_len == NULL) ||
@@ -2969,8 +2997,8 @@ int wh_Client_Ed25519SignDma(whClientContext* ctx, ed25519_key* key,
         return WH_ERROR_BADARGS;
     }
 
-    uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + contextLen;
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                contextLen;
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
         return WH_ERROR_BADARGS;
     }
@@ -2987,19 +3015,14 @@ int wh_Client_Ed25519SignDma(whClientContext* ctx, ed25519_key* key,
     }
 
     if (ret == WH_ERROR_OK) {
-        uint16_t group   = WH_MESSAGE_GROUP_CRYPTO_DMA;
-        uint16_t action  = WC_ALGO_TYPE_PK;
-        uint32_t options = 0;
-
         dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
         if (dataPtr == NULL) {
             return WH_ERROR_BADARGS;
         }
 
-        req = (whMessageCrypto_Ed25519SignDmaRequest*)_createCryptoRequest(
-            dataPtr, WC_PK_TYPE_ED25519_SIGN, ctx->cryptoAffinity);
-
-        uint8_t* req_ctx = (uint8_t*)(req + 1);
+        req     = (whMessageCrypto_Ed25519SignDmaRequest*)_createCryptoRequest(
+                    dataPtr, WC_PK_TYPE_ED25519_SIGN, ctx->cryptoAffinity);
+        req_ctx = (uint8_t*)(req + 1);
 
         if (evict != 0) {
             options |= WH_MESSAGE_CRYPTO_ED25519_SIGN_OPTIONS_EVICT;
@@ -3032,9 +3055,9 @@ int wh_Client_Ed25519SignDma(whClientContext* ctx, ed25519_key* key,
                                         (uint8_t*)dataPtr);
         }
         if (ret == WH_ERROR_OK) {
+            uint16_t res_len = 0;
             evict = 0;
 
-            uint16_t res_len = 0;
             do {
                 ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
                                              (uint8_t*)dataPtr);
@@ -3095,10 +3118,15 @@ int wh_Client_Ed25519VerifyDma(whClientContext* ctx, ed25519_key* key,
     uint8_t*                                  dataPtr = NULL;
     uintptr_t                                 sigAddr = 0;
     uintptr_t                                 msgAddr = 0;
-    uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + contextLen;
-    whKeyId key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
-    int     evict  = 0;
+
+    uint64_t req_len  = 0;
+    whKeyId  key_id   = WH_DEVCTX_TO_KEYID(key->devCtx);
+    int      evict    = 0;
+    uint8_t* req_ctx = NULL;
+
+    uint16_t group   = WH_MESSAGE_GROUP_CRYPTO_DMA;
+    uint16_t action  = WC_ALGO_TYPE_PK;
+    uint32_t options = 0;
 
     if ((ctx == NULL) || (key == NULL) || (sig == NULL) || (msg == NULL) ||
         (out_res == NULL) || ((context == NULL) && (contextLen > 0))) {
@@ -3116,6 +3144,8 @@ int wh_Client_Ed25519VerifyDma(whClientContext* ctx, ed25519_key* key,
         return WH_ERROR_BADARGS;
     }
 
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                contextLen;
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
         return WH_ERROR_BADARGS;
     }
@@ -3134,19 +3164,14 @@ int wh_Client_Ed25519VerifyDma(whClientContext* ctx, ed25519_key* key,
     }
 
     if (ret == WH_ERROR_OK) {
-        uint16_t group   = WH_MESSAGE_GROUP_CRYPTO_DMA;
-        uint16_t action  = WC_ALGO_TYPE_PK;
-        uint32_t options = 0;
-
         dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
         if (dataPtr == NULL) {
             return WH_ERROR_BADARGS;
         }
 
-        req = (whMessageCrypto_Ed25519VerifyDmaRequest*)_createCryptoRequest(
-            dataPtr, WC_PK_TYPE_ED25519_VERIFY, ctx->cryptoAffinity);
-
-        uint8_t* req_ctx = (uint8_t*)(req + 1);
+        req     = (whMessageCrypto_Ed25519VerifyDmaRequest*)_createCryptoRequest(
+                    dataPtr, WC_PK_TYPE_ED25519_VERIFY, ctx->cryptoAffinity);
+        req_ctx = (uint8_t*)(req + 1);
 
         if (evict != 0) {
             options |= WH_MESSAGE_CRYPTO_ED25519_VERIFY_OPTIONS_EVICT;
@@ -3179,9 +3204,9 @@ int wh_Client_Ed25519VerifyDma(whClientContext* ctx, ed25519_key* key,
                                         (uint8_t*)dataPtr);
         }
         if (ret == WH_ERROR_OK) {
+            uint16_t res_len = 0;
             evict = 0;
 
-            uint16_t res_len = 0;
             do {
                 ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
                                              (uint8_t*)dataPtr);
@@ -3321,6 +3346,7 @@ static int _RsaMakeKey(whClientContext* ctx, uint32_t size, uint32_t e,
     uint16_t                           group   = WH_MESSAGE_GROUP_CRYPTO;
     uint16_t                           action  = WC_ALGO_TYPE_PK;
     whKeyId                            key_id  = WH_KEYID_ERASED;
+    uint16_t                           req_len = 0;
 
     if (ctx == NULL) {
         return WH_ERROR_BADARGS;
@@ -3333,11 +3359,9 @@ static int _RsaMakeKey(whClientContext* ctx, uint32_t size, uint32_t e,
     }
 
     /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_RsaKeyGenRequest*)_createCryptoRequest(
-        dataPtr, WC_PK_TYPE_RSA_KEYGEN, ctx->cryptoAffinity);
-
-    uint16_t req_len =
-        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    req     = (whMessageCrypto_RsaKeyGenRequest*)_createCryptoRequest(
+                dataPtr, WC_PK_TYPE_RSA_KEYGEN, ctx->cryptoAffinity);
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     /* Use the supplied key id if provided */
     if (inout_key_id != NULL) {
@@ -3447,8 +3471,14 @@ int wh_Client_RsaFunction(whClientContext* ctx, RsaKey* key, int rsa_type,
     uint8_t*                     dataPtr = NULL;
 
     /* Transaction state */
-    whKeyId key_id;
-    int     evict = 0;
+    whKeyId key_id   = WH_DEVCTX_TO_KEYID(key->devCtx);
+    int     evict    = 0;
+    uint8_t* req_in  = NULL;
+    uint32_t req_len = 0;
+
+    uint16_t group   = WH_MESSAGE_GROUP_CRYPTO;
+    uint16_t action  = WC_ALGO_TYPE_PK;
+    uint32_t options = 0;
 
     WH_DEBUG_CLIENT_VERBOSE("ctx:%p key:%p, rsa_type:%d in:%p in_len:%u, out:%p "
            "inout_out_len:%p\n",
@@ -3459,8 +3489,6 @@ int wh_Client_RsaFunction(whClientContext* ctx, RsaKey* key, int rsa_type,
         ((out != NULL) && (inout_out_len == NULL))) {
         return WH_ERROR_BADARGS;
     }
-
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
 
     WH_DEBUG_CLIENT_VERBOSE("key_id:%x\n", key_id);
 
@@ -3498,16 +3526,11 @@ int wh_Client_RsaFunction(whClientContext* ctx, RsaKey* key, int rsa_type,
             return WH_ERROR_BADARGS;
         }
 
-        req = (whMessageCrypto_RsaRequest*)_createCryptoRequest(
-            dataPtr, WC_PK_TYPE_RSA, ctx->cryptoAffinity);
-
-        uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
-        uint16_t action = WC_ALGO_TYPE_PK;
-
-        uint8_t* req_in  = (uint8_t*)(req + 1);
-        uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                           sizeof(*req) + in_len;
-        uint32_t options = 0;
+        req     = (whMessageCrypto_RsaRequest*)_createCryptoRequest(
+                    dataPtr, WC_PK_TYPE_RSA, ctx->cryptoAffinity);
+        req_in  = (uint8_t*)(req + 1);
+        req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                    in_len;
 
         if (req_len <= WOLFHSM_CFG_COMM_DATA_LEN) {
             if (evict != 0) {
@@ -3529,9 +3552,9 @@ int wh_Client_RsaFunction(whClientContext* ctx, RsaKey* key, int rsa_type,
             ret = wh_Client_SendRequest(ctx, group, action, req_len,
                                         (uint8_t*)dataPtr);
             if (ret == WH_ERROR_OK) {
+                uint16_t res_len = 0;
                 /* Server will evict at this point. Reset evict */
                 evict            = 0;
-                uint16_t res_len = 0;
 
                 /* Recv Response */
                 do {
@@ -3582,8 +3605,8 @@ int wh_Client_RsaGetSize(whClientContext* ctx, const RsaKey* key, int* out_size)
     int ret = WH_ERROR_OK;
 
     /* Transaction state */
-    whKeyId key_id;
-    int     evict = 0;
+    whKeyId key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    int     evict  = 0;
 
     WH_DEBUG_CLIENT_VERBOSE("ctx:%p key:%p, out_size:%p \n", ctx, key,
            out_size);
@@ -3591,8 +3614,6 @@ int wh_Client_RsaGetSize(whClientContext* ctx, const RsaKey* key, int* out_size)
     if ((ctx == NULL) || (key == NULL) || (out_size == NULL)) {
         return WH_ERROR_BADARGS;
     }
-
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
 
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
@@ -3641,9 +3662,9 @@ int wh_Client_RsaGetSize(whClientContext* ctx, const RsaKey* key, int* out_size)
             ret = wh_Client_SendRequest(ctx, group, action, req_len,
                                         (uint8_t*)dataPtr);
             if (ret == WH_ERROR_OK) {
+                uint16_t res_len = 0;
                 /* Server will evict at this point. Reset evict */
                 evict            = 0;
-                uint16_t res_len = 0;
 
                 /* Recv Response */
                 do {
@@ -3696,6 +3717,8 @@ static int _HkdfMakeKey(whClientContext* ctx, int hashType, whKeyId keyIdIn,
     uint16_t                      group   = WH_MESSAGE_GROUP_CRYPTO;
     uint16_t                      action  = WC_ALGO_TYPE_KDF;
     whKeyId                       key_id  = WH_KEYID_ERASED;
+    uint64_t                      req_len = 0;
+    uint8_t*                      req_ptr = NULL;
 
     if ((ctx == NULL) || ((inKey == NULL) && (inKeySz != 0))) {
         return WH_ERROR_BADARGS;
@@ -3712,8 +3735,11 @@ static int _HkdfMakeKey(whClientContext* ctx, int hashType, whKeyId keyIdIn,
         dataPtr, WC_ALGO_TYPE_KDF, WC_KDF_TYPE_HKDF, ctx->cryptoAffinity);
 
     /* Calculate request length including variable-length data */
-    uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                       sizeof(*req) + inKeySz + saltSz + infoSz;
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                inKeySz + saltSz + infoSz;
+    if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
+        return WH_ERROR_BADARGS;
+    }
 
     /* Use the supplied key id if provided */
     if (inout_key_id != NULL) {
@@ -3740,23 +3766,23 @@ static int _HkdfMakeKey(whClientContext* ctx, int hashType, whKeyId keyIdIn,
     }
 
     /* Copy variable-length data after the request structure */
-    uint8_t* data_ptr = (uint8_t*)(req + 1);
+    req_ptr = (uint8_t*)(req + 1);
 
     /* Copy input key material */
     if ((inKey != NULL) && (inKeySz > 0)) {
-        memcpy(data_ptr, inKey, inKeySz);
-        data_ptr += inKeySz;
+        memcpy(req_ptr, inKey, inKeySz);
+        req_ptr += inKeySz;
     }
 
     /* Copy salt if provided */
     if (salt != NULL && saltSz > 0) {
-        memcpy(data_ptr, salt, saltSz);
-        data_ptr += saltSz;
+        memcpy(req_ptr, salt, saltSz);
+        req_ptr += saltSz;
     }
 
     /* Copy info if provided */
     if (info != NULL && infoSz > 0) {
-        memcpy(data_ptr, info, infoSz);
+        memcpy(req_ptr, info, infoSz);
     }
 
     /* Send Request */
@@ -3862,6 +3888,9 @@ static int _CmacKdfMakeKey(whClientContext* ctx, whKeyId saltKeyId,
     uint16_t                         group   = WH_MESSAGE_GROUP_CRYPTO;
     uint16_t                         action  = WC_ALGO_TYPE_KDF;
     whKeyId                          key_id  = WH_KEYID_ERASED;
+    uint64_t                         req_len = 0;
+    uint16_t                         res_len = 0;
+    uint8_t*                         req_ptr = NULL;
 
     if ((ctx == NULL) || (outSz == 0)) {
         return WH_ERROR_BADARGS;
@@ -3883,13 +3912,11 @@ static int _CmacKdfMakeKey(whClientContext* ctx, whKeyId saltKeyId,
         dataPtr, WC_ALGO_TYPE_KDF, WC_KDF_TYPE_TWOSTEP_CMAC,
         ctx->cryptoAffinity);
 
-    uint32_t total_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                         sizeof(*req) + saltSz + zSz + fixedInfoSz;
-
-    if (total_len > WOLFHSM_CFG_COMM_DATA_LEN) {
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+                saltSz + zSz + fixedInfoSz;
+    if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
         return WH_ERROR_BADARGS;
     }
-    uint16_t req_len = (uint16_t)total_len;
 
     if (inout_key_id != NULL) {
         key_id = *inout_key_id;
@@ -3912,32 +3939,31 @@ static int _CmacKdfMakeKey(whClientContext* ctx, whKeyId saltKeyId,
         memcpy(req->label, label, label_len);
     }
 
-    uint8_t* payload = (uint8_t*)(req + 1);
+    req_ptr = (uint8_t*)(req + 1);
 
     if (saltSz > 0 && salt != NULL) {
-        memcpy(payload, salt, saltSz);
-        payload += saltSz;
+        memcpy(req_ptr, salt, saltSz);
+        req_ptr += saltSz;
     }
 
     if (zSz > 0 && z != NULL) {
-        memcpy(payload, z, zSz);
-        payload += zSz;
+        memcpy(req_ptr, z, zSz);
+        req_ptr += zSz;
     }
 
     if (fixedInfoSz > 0 && fixedInfo != NULL) {
-        memcpy(payload, fixedInfo, fixedInfoSz);
-        payload += fixedInfoSz;
+        memcpy(req_ptr, fixedInfo, fixedInfoSz);
+        req_ptr += fixedInfoSz;
     }
 
     /* squash unused warning */
-    (void)payload;
+    (void)req_ptr;
 
     ret = wh_Client_SendRequest(ctx, group, action, req_len, dataPtr);
     if (ret != WH_ERROR_OK) {
         return ret;
     }
 
-    uint16_t res_len = 0;
     do {
         ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len, dataPtr);
     } while (ret == WH_ERROR_NOTREADY);
@@ -4049,13 +4075,17 @@ int wh_Client_Cmac(whClientContext* ctx, Cmac* cmac, CmacType type,
     whMessageCrypto_CmacAesResponse* res     = NULL;
     uint8_t*                         dataPtr = NULL;
 
+    whKeyId  key_id  = WH_DEVCTX_TO_KEYID(cmac->devCtx);
+    uint64_t req_len = 0;
+    uint8_t* req_in  = NULL;
+    uint8_t* req_key = NULL;
+    uint32_t hdr_sz  = 0;
+    uint32_t mac_len =
+        ((outMac == NULL) || (outMacLen == NULL)) ? 0 : *outMacLen;
+
     if (ctx == NULL || cmac == NULL) {
         return WH_ERROR_BADARGS;
     }
-
-    whKeyId  key_id = WH_DEVCTX_TO_KEYID(cmac->devCtx);
-    uint32_t mac_len =
-        ((outMac == NULL) || (outMacLen == NULL)) ? 0 : *outMacLen;
 
     /* For non-HSM keys on incremental calls (update/final with no key argument
      * provided), send the stored key bytes so the server can reconstruct the
@@ -4085,19 +4115,17 @@ int wh_Client_Cmac(whClientContext* ctx, Cmac* cmac, CmacType type,
     }
 
     /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_CmacAesRequest*)_createCryptoRequest(
-        dataPtr, WC_ALGO_TYPE_CMAC, ctx->cryptoAffinity);
-
-    uint8_t* req_in  = (uint8_t*)(req + 1);
-    uint8_t* req_key = req_in + inLen;
-    uint32_t hdr_sz =
-        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    req     = (whMessageCrypto_CmacAesRequest*)_createCryptoRequest(
+                dataPtr, WC_ALGO_TYPE_CMAC, ctx->cryptoAffinity);
+    req_in  = (uint8_t*)(req + 1);
+    req_key = req_in + inLen;
+    hdr_sz  = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     if (inLen > WOLFHSM_CFG_COMM_DATA_LEN - hdr_sz ||
         keyLen > WOLFHSM_CFG_COMM_DATA_LEN - hdr_sz - inLen) {
         return WH_ERROR_BADARGS;
     }
-    uint16_t req_len = hdr_sz + inLen + keyLen;
+    req_len = hdr_sz + inLen + keyLen;
 
     /* Setup request packet */
     req->inSz  = inLen;
@@ -4119,6 +4147,7 @@ int wh_Client_Cmac(whClientContext* ctx, Cmac* cmac, CmacType type,
     /* Send request */
     ret = wh_Client_SendRequest(ctx, group, action, req_len, (uint8_t*)dataPtr);
     if (ret == WH_ERROR_OK) {
+        uint16_t res_len = 0;
         /* Update the local type since call succeeded */
         cmac->type = type;
 
@@ -4128,8 +4157,6 @@ int wh_Client_Cmac(whClientContext* ctx, Cmac* cmac, CmacType type,
             cmac->aes.keylen = keyLen;
         }
 
-
-        uint16_t res_len = 0;
         do {
             ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
                                          (uint8_t*)dataPtr);
@@ -4147,10 +4174,10 @@ int wh_Client_Cmac(whClientContext* ctx, Cmac* cmac, CmacType type,
 
                 /* Copy out finalized CMAC if present */
                 if (ret == 0 && outMac != NULL && outMacLen != NULL) {
+                    uint8_t* res_mac = (uint8_t*)(res + 1);
                     if (res->outSz < *outMacLen) {
                         *outMacLen = res->outSz;
                     }
-                    uint8_t* res_mac = (uint8_t*)(res + 1);
                     memcpy(outMac, res_mac, *outMacLen);
                 }
             }
@@ -4173,13 +4200,16 @@ int wh_Client_CmacDma(whClientContext* ctx, Cmac* cmac, CmacType type,
     uint8_t*                            dataPtr = NULL;
     uintptr_t                           inAddr  = 0;
 
+    whKeyId  key_id  = WH_DEVCTX_TO_KEYID(cmac->devCtx);
+    uint64_t req_len = 0;
+    uint8_t* req_key = NULL;
+    uint32_t hdr_sz  = 0;
+    uint32_t mac_len =
+        ((outMac == NULL) || (outMacLen == NULL)) ? 0 : *outMacLen;
+
     if (ctx == NULL || cmac == NULL) {
         return WH_ERROR_BADARGS;
     }
-
-    whKeyId  key_id = WH_DEVCTX_TO_KEYID(cmac->devCtx);
-    uint32_t mac_len =
-        ((outMac == NULL) || (outMacLen == NULL)) ? 0 : *outMacLen;
 
     /* For non-HSM keys on subsequent calls (no key provided), send the
      * stored key bytes so the server can reconstruct the CMAC context */
@@ -4212,14 +4242,13 @@ int wh_Client_CmacDma(whClientContext* ctx, Cmac* cmac, CmacType type,
         dataPtr, WC_ALGO_TYPE_CMAC, ctx->cryptoAffinity);
     memset(req, 0, sizeof(*req));
 
-    uint8_t* req_key = (uint8_t*)(req + 1);
-    uint32_t hdr_sz =
-        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    req_key = (uint8_t*)(req + 1);
+    hdr_sz = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     if (keyLen > WOLFHSM_CFG_COMM_DATA_LEN - hdr_sz) {
         return WH_ERROR_BADARGS;
     }
-    uint16_t req_len = hdr_sz + keyLen;
+    req_len = hdr_sz + keyLen;
 
     /* Setup request fields */
     req->outSz = mac_len;
@@ -4253,6 +4282,7 @@ int wh_Client_CmacDma(whClientContext* ctx, Cmac* cmac, CmacType type,
     }
 
     if (ret == WH_ERROR_OK) {
+        uint16_t respSz = 0;
         /* Update the local type since call succeeded */
         cmac->type = type;
 
@@ -4262,7 +4292,6 @@ int wh_Client_CmacDma(whClientContext* ctx, Cmac* cmac, CmacType type,
             cmac->aes.keylen = keyLen;
         }
 
-        uint16_t respSz = 0;
         do {
             ret = wh_Client_RecvResponse(ctx, NULL, NULL, &respSz,
                                          (uint8_t*)dataPtr);
@@ -4279,10 +4308,10 @@ int wh_Client_CmacDma(whClientContext* ctx, Cmac* cmac, CmacType type,
 
                 /* Copy out finalized CMAC if present */
                 if (ret == 0 && outMac != NULL && outMacLen != NULL) {
+                    uint8_t* res_mac = (uint8_t*)(res + 1);
                     if (res->outSz < *outMacLen) {
                         *outMacLen = res->outSz;
                     }
-                    uint8_t* res_mac = (uint8_t*)(res + 1);
                     memcpy(outMac, res_mac, *outMacLen);
                 }
             }
@@ -4315,6 +4344,7 @@ static int _xferSha256BlockAndUpdateDigest(whClientContext* ctx,
     whMessageCrypto_Sha256Request*  req     = NULL;
     whMessageCrypto_Sha2Response*   res     = NULL;
     uint8_t*                        dataPtr = NULL;
+    uint16_t                        req_len = 0;
 
     /* Get data buffer */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
@@ -4347,8 +4377,7 @@ static int _xferSha256BlockAndUpdateDigest(whClientContext* ctx,
     req->resumeState.hiLen = sha256->hiLen;
     req->resumeState.loLen = sha256->loLen;
 
-    uint32_t req_len =
-        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     ret = wh_Client_SendRequest(ctx, group, WC_ALGO_TYPE_HASH, req_len,
                                 (uint8_t*)dataPtr);
@@ -4602,6 +4631,7 @@ static int _xferSha224BlockAndUpdateDigest(whClientContext* ctx,
     whMessageCrypto_Sha256Request* req     = NULL;
     whMessageCrypto_Sha2Response*  res     = NULL;
     uint8_t*                       dataPtr = NULL;
+    uint16_t                       req_len = 0;
 
     /* Get data buffer */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
@@ -4634,8 +4664,7 @@ static int _xferSha224BlockAndUpdateDigest(whClientContext* ctx,
     req->resumeState.hiLen = sha224->hiLen;
     req->resumeState.loLen = sha224->loLen;
 
-    uint32_t req_len =
-        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     ret = wh_Client_SendRequest(ctx, group, WC_ALGO_TYPE_HASH, req_len,
                                 (uint8_t*)dataPtr);
@@ -4883,6 +4912,7 @@ static int _xferSha384BlockAndUpdateDigest(whClientContext* ctx,
     whMessageCrypto_Sha512Request* req     = NULL;
     whMessageCrypto_Sha2Response*  res     = NULL;
     uint8_t*                       dataPtr = NULL;
+    uint16_t                       req_len = 0;
 
     /* Get data buffer */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
@@ -4915,8 +4945,7 @@ static int _xferSha384BlockAndUpdateDigest(whClientContext* ctx,
     req->resumeState.hiLen = sha384->hiLen;
     req->resumeState.loLen = sha384->loLen;
 
-    uint32_t req_len =
-        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     ret = wh_Client_SendRequest(ctx, group, WC_ALGO_TYPE_HASH, req_len,
                                 (uint8_t*)dataPtr);
@@ -5165,6 +5194,7 @@ static int _xferSha512BlockAndUpdateDigest(whClientContext* ctx,
     whMessageCrypto_Sha512Request* req     = NULL;
     whMessageCrypto_Sha2Response*  res     = NULL;
     uint8_t*                       dataPtr = NULL;
+    uint16_t                       req_len = 0;
 
     /* Get data buffer */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
@@ -5197,8 +5227,7 @@ static int _xferSha512BlockAndUpdateDigest(whClientContext* ctx,
     req->resumeState.hiLen    = sha512->hiLen;
     req->resumeState.loLen    = sha512->loLen;
     req->resumeState.hashType = sha512->hashType;
-    uint32_t req_len =
-        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     ret = wh_Client_SendRequest(ctx, group, WC_ALGO_TYPE_HASH, req_len,
                                 (uint8_t*)dataPtr);
@@ -5710,7 +5739,7 @@ int wh_Client_MlDsaSign(whClientContext* ctx, const byte* in, word32 in_len,
         uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
         uint16_t action = WC_ALGO_TYPE_PK;
 
-        uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
+        uint64_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
                            sizeof(*req) + in_len + contextLen;
         uint32_t options = 0;
 
@@ -5751,11 +5780,9 @@ int wh_Client_MlDsaSign(whClientContext* ctx, const byte* in, word32 in_len,
             ret = wh_Client_SendRequest(ctx, group, action, req_len,
                                         (uint8_t*)dataPtr);
             if (ret == WH_ERROR_OK) {
+                uint16_t res_len = 0;
                 /* Server will evict at this point. Reset evict */
                 evict = 0;
-
-                /* Response Message */
-                uint16_t res_len = 0;
 
                 /* Recv Response */
                 do {
@@ -5845,9 +5872,8 @@ int wh_Client_MlDsaVerify(whClientContext* ctx, const byte* sig, word32 sig_len,
         uint16_t action  = WC_ALGO_TYPE_PK;
         uint32_t options = 0;
 
-        uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
+        uint64_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
                            sizeof(*req) + sig_len + msg_len + contextLen;
-
 
         /* Get data pointer from the context to use as request/response storage
          */
@@ -5894,10 +5920,9 @@ int wh_Client_MlDsaVerify(whClientContext* ctx, const byte* sig, word32 sig_len,
                                         (uint8_t*)dataPtr);
 
             if (ret == WH_ERROR_OK) {
+                uint16_t res_len = 0;
                 /* Server will evict at this point. Reset evict */
                 evict = 0;
-                /* Response Message */
-                uint16_t res_len = 0;
 
                 /* Recv Response */
                 do {
@@ -6012,6 +6037,10 @@ static int _MlDsaMakeKeyDma(whClientContext* ctx, int level,
     whMessageCrypto_MlDsaKeyGenDmaResponse* res     = NULL;
     uintptr_t                               keyAddr   = 0;
     uint64_t                                keyAddrSz = 0;
+    uint16_t                                req_len = 0;
+
+    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO_DMA;
+    uint16_t action = WC_ALGO_TYPE_PK;
 
     if (ctx == NULL) {
         return WH_ERROR_BADARGS;
@@ -6035,11 +6064,7 @@ static int _MlDsaMakeKeyDma(whClientContext* ctx, int level,
     }
 
     /* Request Message */
-    uint16_t group  = WH_MESSAGE_GROUP_CRYPTO_DMA;
-    uint16_t action = WC_ALGO_TYPE_PK;
-
-    uint16_t req_len =
-        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     if (req_len <= WOLFHSM_CFG_COMM_DATA_LEN) {
         memset(req, 0, sizeof(*req));
@@ -6230,11 +6255,9 @@ int wh_Client_MlDsaSignDma(whClientContext* ctx, const byte* in, word32 in_len,
                                             (uint8_t*)dataPtr);
             }
             if (ret == WH_ERROR_OK) {
+                uint16_t res_len = 0;
                 /* Server will evict at this point if requested */
                 evict = 0;
-
-                /* Response Message */
-                uint16_t res_len = 0;
 
                 /* Recv Response */
                 do {
@@ -6373,11 +6396,9 @@ int wh_Client_MlDsaVerifyDma(whClientContext* ctx, const byte* sig,
                                             (uint8_t*)dataPtr);
             }
             if (ret == WH_ERROR_OK) {
+                uint16_t res_len = 0;
                 /* Server will evict at this point if requested */
                 evict = 0;
-
-                /* Response Message */
-                uint16_t res_len = 0;
 
                 /* Recv Response */
                 do {
