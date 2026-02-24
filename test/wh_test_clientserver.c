@@ -756,7 +756,7 @@ int whTest_ClientServerSequential(whTestNvmBackendType nvmType)
         /* Prepare echo test */
         send_len =
             snprintf(send_buffer, sizeof(send_buffer), "Request:%u", counter);
-        snprintf(recv_buffer, sizeof(recv_buffer), "NOTHING RECEIVED");
+        (void)snprintf(recv_buffer, sizeof(recv_buffer), "NOTHING RECEIVED");
         recv_len = 0;
 
         WH_TEST_RETURN_ON_FAIL(
@@ -1173,7 +1173,7 @@ int whTest_ClientServerClientConfig(whClientConfig* clientCfg)
         /* Prepare echo test */
         send_len =
             snprintf(send_buffer, sizeof(send_buffer), "Request:%u", counter);
-        snprintf(recv_buffer, sizeof(recv_buffer), "NOTHING RECEIVED");
+        (void)snprintf(recv_buffer, sizeof(recv_buffer), "NOTHING RECEIVED");
         recv_len = 0;
 
         WH_TEST_RETURN_ON_FAIL(ret = wh_Client_Echo(client, send_len, send_buffer, &recv_len, recv_buffer));
@@ -1551,13 +1551,11 @@ static void _whClientServerThreadTest(whClientConfig* c_conf,
         rc = pthread_create(&cthread, NULL, _whClientTask, c_conf);
         if (rc == 0) {
             /* All good. Block on joining */
-
-            pthread_join(cthread, &retval);
-            pthread_cancel(sthread);
+            (void)pthread_join(cthread, &retval);
+            (void)pthread_cancel(sthread);
         } else {
             /* Cancel the server thread */
-            pthread_cancel(sthread);
-
+            (void)pthread_cancel(sthread);
         }
     }
 }
