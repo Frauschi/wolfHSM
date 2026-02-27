@@ -339,9 +339,10 @@ int main(int argc, char** argv)
         }
         else if (strcmp(argv[i], "--flags") == 0 && i + 1 < argc) {
             char* end;
-            unsigned long val = strtoul(argv[i + 1], &end, 0);
-            errno             = 0;
+            unsigned long val;
 
+            errno = 0;
+            val   = strtoul(argv[i + 1], &end, 0);
             if (errno || *end || val > 0xFFFF) {
                 WOLFHSM_CFG_PRINTF("Invalid --flags value: %s\n", argv[i + 1]);
                 return -1;

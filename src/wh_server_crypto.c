@@ -22,7 +22,6 @@
  */
 
 /* Pick up compile-time configuration */
-#include "wolfhsm/wh_keyid.h"
 #include "wolfhsm/wh_settings.h"
 
 #if !defined(WOLFHSM_CFG_NO_CRYPTO) && defined(WOLFHSM_CFG_ENABLE_SERVER)
@@ -53,6 +52,7 @@
 #include "wolfhsm/wh_utils.h"
 #include "wolfhsm/wh_server_keystore.h"
 #include "wolfhsm/wh_server_crypto.h"
+#include "wolfhsm/wh_keyid.h"
 
 #include "wolfhsm/wh_server.h"
 
@@ -1126,7 +1126,7 @@ static int _HandleEccVerify(whServerContext* ctx, uint16_t magic, int devId,
     whMessageCrypto_EccVerifyRequest  req;
     whMessageCrypto_EccVerifyResponse res;
 
-    uint32_t available      = inSize - sizeof(whMessageCrypto_EccVerifyRequest);
+    uint32_t available      = 0;
     uint32_t options        = 0;
     whKeyId  key_id         = WH_KEYID_ERASED;
     uint32_t hash_len       = 0;
@@ -1153,6 +1153,7 @@ static int _HandleEccVerify(whServerContext* ctx, uint16_t magic, int devId,
     }
 
     /* Validate variable-length fields fit within inSize */
+    available = inSize - sizeof(whMessageCrypto_EccVerifyRequest);
     if (req.sigSz > available) {
         return WH_ERROR_BADARGS;
     }
@@ -1390,7 +1391,7 @@ static int _HandleHkdf(whServerContext* ctx, uint16_t magic, int devId,
     whNvmFlags flags      = 0;
     uint8_t*   label      = 0;
     uint16_t   label_size = WH_NVM_LABEL_LEN;
-    uint32_t   available  = inSize - sizeof(whMessageCrypto_HkdfRequest);
+    uint32_t   available  = 0;
 
     const uint8_t* inKey         = NULL;
     const uint8_t* salt          = NULL;
@@ -1428,6 +1429,7 @@ static int _HandleHkdf(whServerContext* ctx, uint16_t magic, int devId,
         WH_KEYTYPE_CRYPTO, ctx->comm->client_id, req.keyIdIn);
 
     /* Validate variable-length fields fit within input buffer */
+    available = inSize - sizeof(whMessageCrypto_HkdfRequest);
     if (inKeySz > available) {
         return WH_ERROR_BADARGS;
     }
@@ -1543,7 +1545,7 @@ static int _HandleCmacKdf(whServerContext* ctx, uint16_t magic, int devId,
     whNvmFlags flags       = WH_NVM_FLAGS_NONE;
     uint8_t*   label       = NULL;
     uint16_t   label_size  = WH_NVM_LABEL_LEN;
-    uint32_t   available   = inSize - sizeof(whMessageCrypto_CmacKdfRequest);
+    uint32_t   available   = 0;
 
     const uint8_t* salt           = NULL;
     const uint8_t* z              = NULL;
@@ -1583,6 +1585,7 @@ static int _HandleCmacKdf(whServerContext* ctx, uint16_t magic, int devId,
 
 
     /* Validate variable-length fields fit within input buffer */
+    available = inSize - sizeof(whMessageCrypto_CmacKdfRequest);
     if (saltSz > available) {
         return WH_ERROR_BADARGS;
     }
@@ -1977,7 +1980,7 @@ static int _HandleEd25519Sign(whServerContext* ctx, uint16_t magic, int devId,
     whMessageCrypto_Ed25519SignRequest req;
     uint8_t                            sig[ED25519_SIG_SIZE];
     word32                             sig_len   = sizeof(sig);
-    uint32_t                           available = inSize - sizeof(req);
+    uint32_t                           available = 0;
     whKeyId                            key_id    = WH_KEYID_ERASED;
     uint32_t                           msg_len   = 0;
     uint8_t*                           req_msg   = NULL;
@@ -1995,6 +1998,8 @@ static int _HandleEd25519Sign(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Validate variable-length fields fit within input buffer */
+    available = inSize - sizeof(whMessageCrypto_Ed25519SignRequest);
     if (req.msgSz > available) {
         return WH_ERROR_BADARGS;
     }
@@ -2079,7 +2084,7 @@ static int _HandleEd25519Verify(whServerContext* ctx, uint16_t magic, int devId,
     ed25519_key                           key[1];
     whMessageCrypto_Ed25519VerifyRequest  req;
     whMessageCrypto_Ed25519VerifyResponse res;
-    uint32_t                              available  = inSize - sizeof(req);
+    uint32_t                              available  = 0;
     whKeyId                               key_id     = WH_KEYID_ERASED;
     uint32_t                              sig_len    = 0;
     uint32_t                              msg_len    = 0;
@@ -2099,6 +2104,8 @@ static int _HandleEd25519Verify(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Validate variable-length fields fit within input buffer */
+    available = inSize - sizeof(whMessageCrypto_Ed25519VerifyRequest);
     if (req.sigSz > available) {
         return WH_ERROR_BADARGS;
     }
@@ -2177,7 +2184,7 @@ static int _HandleEd25519SignDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_Ed25519SignDmaRequest  req;
     whMessageCrypto_Ed25519SignDmaResponse res;
     word32                                 sigLen = 0;
-    uint32_t                               available = inSize - sizeof(req);
+    uint32_t                               available = 0;
     uint8_t*                               req_ctx = NULL;
     whKeyId                                key_id = WH_KEYID_ERASED;
     int                                    evict = 0;
@@ -2193,6 +2200,8 @@ static int _HandleEd25519SignDma(whServerContext* ctx, uint16_t magic,
         return ret;
     }
 
+    /* Validate variable-length fields fit within input buffer */
+    available = inSize - sizeof(whMessageCrypto_Ed25519SignDmaRequest);
     if (req.ctxSz > available) {
         return WH_ERROR_BADARGS;
     }
@@ -2287,7 +2296,7 @@ static int _HandleEd25519VerifyDma(whServerContext* ctx, uint16_t magic,
     void*                                    sigAddr   = NULL;
     whMessageCrypto_Ed25519VerifyDmaRequest  req;
     whMessageCrypto_Ed25519VerifyDmaResponse res;
-    uint32_t                                 available = inSize - sizeof(req);
+    uint32_t                                 available = 0;
     uint8_t*                                 req_ctx   = NULL;
     whKeyId                                  key_id    = WH_KEYID_ERASED;
     int                                      evict     = 0;
@@ -2303,6 +2312,8 @@ static int _HandleEd25519VerifyDma(whServerContext* ctx, uint16_t magic,
         return ret;
     }
 
+    /* Validate variable-length fields fit within input buffer */
+    available = inSize - sizeof(whMessageCrypto_Ed25519VerifyDmaRequest);
     if (req.ctxSz > available) {
         return WH_ERROR_BADARGS;
     }
