@@ -43,6 +43,7 @@
 #include "wolfssl/wolfcrypt/ecc.h"
 #include "wolfssl/wolfcrypt/ed25519.h"
 #include "wolfssl/wolfcrypt/dilithium.h"
+#include "wolfssl/wolfcrypt/mlkem.h"
 
 #include "wolfhsm/wh_message_crypto.h"
 
@@ -117,6 +118,15 @@ int wh_Crypto_MlDsaSerializeKeyDer(MlDsaKey* key, uint16_t max_size,
 int wh_Crypto_MlDsaDeserializeKeyDer(const uint8_t* buffer, uint16_t size,
                                      MlDsaKey* key);
 #endif /* HAVE_DILITHIUM */
+
+#ifdef WOLFSSL_HAVE_MLKEM
+/* Store a MlKemKey to a byte sequence */
+int wh_Crypto_MlKemSerializeKey(MlKemKey* key, uint16_t max_size,
+                                uint8_t* buffer, uint16_t* out_size);
+/* Restore a MlKemKey from a byte sequence */
+int wh_Crypto_MlKemDeserializeKey(const uint8_t* buffer, uint16_t size,
+                                  MlKemKey* key);
+#endif /* WOLFSSL_HAVE_MLKEM */
 
 #endif  /* !WOLFHSM_CFG_NO_CRYPTO */
 

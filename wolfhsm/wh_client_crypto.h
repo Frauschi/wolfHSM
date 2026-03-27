@@ -50,6 +50,7 @@
 #include "wolfssl/wolfcrypt/ecc.h"
 #include "wolfssl/wolfcrypt/ed25519.h"
 #include "wolfssl/wolfcrypt/dilithium.h"
+#include "wolfssl/wolfcrypt/mlkem.h"
 #include "wolfssl/wolfcrypt/hmac.h"
 
 /**
@@ -1291,6 +1292,46 @@ int wh_Client_MlDsaCheckPrivKeyDma(whClientContext* ctx, MlDsaKey* key,
 #endif /* WOLFHSM_CFG_DMA */
 
 #endif /* HAVE_DILITHIUM */
+
+#ifdef WOLFSSL_HAVE_MLKEM
+int wh_Client_MlKemSetKeyId(MlKemKey* key, whKeyId keyId);
+int wh_Client_MlKemGetKeyId(MlKemKey* key, whKeyId* outId);
+
+int wh_Client_MlKemImportKey(whClientContext* ctx, MlKemKey* key,
+                             whKeyId* inout_keyId, whNvmFlags flags,
+                             uint16_t label_len, uint8_t* label);
+int wh_Client_MlKemExportKey(whClientContext* ctx, whKeyId keyId, MlKemKey* key,
+                             uint16_t label_len, uint8_t* label);
+int wh_Client_MlKemMakeExportKey(whClientContext* ctx, int level, int size,
+                                 MlKemKey* key);
+int wh_Client_MlKemMakeCacheKey(whClientContext* ctx, int size, int level,
+                                whKeyId* inout_key_id, whNvmFlags flags,
+                                uint16_t label_len, uint8_t* label);
+int wh_Client_MlKemEncapsulate(whClientContext* ctx, MlKemKey* key,
+                               byte* ct, word32* inout_ct_len,
+                               byte* ss, word32* inout_ss_len);
+int wh_Client_MlKemDecapsulate(whClientContext* ctx, MlKemKey* key,
+                               const byte* ct, word32 ct_len, byte* ss,
+                               word32* inout_ss_len);
+
+#ifdef WOLFHSM_CFG_DMA
+int wh_Client_MlKemImportKeyDma(whClientContext* ctx, MlKemKey* key,
+                                whKeyId* inout_keyId, whNvmFlags flags,
+                                uint16_t label_len, uint8_t* label);
+int wh_Client_MlKemExportKeyDma(whClientContext* ctx, whKeyId keyId,
+                                MlKemKey* key, uint16_t label_len,
+                                uint8_t* label);
+int wh_Client_MlKemMakeExportKeyDma(whClientContext* ctx, int level,
+                                    MlKemKey* key);
+int wh_Client_MlKemEncapsulateDma(whClientContext* ctx, MlKemKey* key,
+                                  byte* ct, word32* inout_ct_len, byte* ss,
+                                  word32* inout_ss_len);
+int wh_Client_MlKemDecapsulateDma(whClientContext* ctx, MlKemKey* key,
+                                  const byte* ct, word32 ct_len, byte* ss,
+                                  word32* inout_ss_len);
+#endif /* WOLFHSM_CFG_DMA */
+
+#endif /* WOLFSSL_HAVE_MLKEM */
 
 #endif /* !WOLFHSM_CFG_NO_CRYPTO */
 #endif /* !WOLFHSM_WH_CLIENT_CRYPTO_H_ */

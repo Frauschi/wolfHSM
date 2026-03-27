@@ -44,6 +44,7 @@
 #include "wolfssl/wolfcrypt/ecc.h"
 #include "wolfssl/wolfcrypt/ed25519.h"
 #include "wolfssl/wolfcrypt/dilithium.h"
+#include "wolfssl/wolfcrypt/mlkem.h"
 
 #include "wolfhsm/wh_error.h"
 #include "wolfhsm/wh_utils.h"
@@ -378,6 +379,62 @@ int wh_Crypto_MlDsaDeserializeKeyDer(const uint8_t* buffer, uint16_t size,
     return ret;
 }
 #endif /* HAVE_DILITHIUM */
+
+#ifdef WOLFSSL_HAVE_MLKEM
+int wh_Crypto_MlKemSerializeKey(MlKemKey* key, uint16_t max_size,
+                                uint8_t* buffer, uint16_t* out_size)
+{
+    int    ret = WH_ERROR_OK;
+    word32 keySize;
+
+    if ((key == NULL) || (buffer == NULL) || (out_size == NULL)) {
+        return WH_ERROR_BADARGS;
+    }
+
+    ret = wc_MlKemKey_PrivateKeySize(key, &keySize);
+    if (ret == WH_ERROR_OK) {
+        if (keySize > max_size) {
+            ret = WH_ERROR_BADARGS;
+        }
+        if (ret == WH_ERROR_OK) {
+            ret = wc_MlKemKey_EncodePrivateKey(key, buffer, keySize);
+        }
+    }
+    else {
+        ret = wc_MlKemKey_PublicKeySize(key, &keySize);
+        if (ret == WH_ERROR_OK) {
+            if (keySize > max_size) {
+                ret = WH_ERROR_BADARGS;
+            }
+            if (ret == WH_ERROR_OK) {
+                ret = wc_MlKemKey_EncodePublicKey(key, buffer, keySize);
+            }
+        }
+    }
+
+    if (ret == WH_ERROR_OK) {
+        *out_size = (uint16_t)keySize;
+    }
+
+    return ret;
+}
+
+int wh_Crypto_MlKemDeserializeKey(const uint8_t* buffer, uint16_t size,
+                                  MlKemKey* key)
+{
+    int ret;
+
+    if ((buffer == NULL) || (key == NULL) || (size == 0)) {
+        return WH_ERROR_BADARGS;
+    }
+
+    ret = wc_MlKemKey_DecodePrivateKey(key, buffer, size);
+    if (ret != WH_ERROR_OK) {
+        ret = wc_MlKemKey_DecodePublicKey(key, buffer, size);
+    }
+    return ret;
+}
+#endif /* WOLFSSL_HAVE_MLKEM */
 
 #ifdef WOLFSSL_CMAC
 void wh_Crypto_CmacAesSaveStateToMsg(whMessageCrypto_CmacAesState* state,
