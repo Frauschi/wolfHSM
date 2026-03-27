@@ -140,6 +140,10 @@ extern "C" {
 #define WOLFSSL_SHAKE128
 #define WOLFSSL_SHAKE256
 
+/* ML-KEM Options */
+#define WOLFSSL_HAVE_MLKEM
+#define WOLFSSL_WC_MLKEM
+
 /* The following options can be individually controlled to customize the
  * ML-DSA configuration */
 #if 0
