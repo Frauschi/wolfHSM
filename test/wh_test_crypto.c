@@ -32,7 +32,7 @@
 #include "wolfssl/wolfcrypt/types.h"
 #include "wolfssl/wolfcrypt/kdf.h"
 #include "wolfssl/wolfcrypt/ed25519.h"
-#include "wolfssl/wolfcrypt/mlkem.h"
+#include "wolfssl/wolfcrypt/wc_mlkem.h"
 
 #include "wolfhsm/wh_error.h"
 
@@ -5261,7 +5261,7 @@ static int whTestCrypto_MlKemClient(whClientContext* ctx, int devId, WC_RNG* rng
         }
 
         if (ret == 0) {
-            ret = wh_Client_MlKemMakeExportKey(ctx, levels[i], 0, key);
+            ret = wh_Client_MlKemMakeExportKey(ctx, levels[i], key);
             if (ret != 0) {
                 WH_ERROR_PRINT(
                     "Failed ML-KEM make export key level=%d ret=%d\n",
@@ -5318,7 +5318,7 @@ static int whTestCrypto_MlKemClient(whClientContext* ctx, int devId, WC_RNG* rng
 
         if (ret == 0) {
             ret = wh_Client_MlKemMakeCacheKey(
-                ctx, 0, levels[i], &usageKeyId, WH_NVM_FLAGS_NONE,
+                ctx, levels[i], &usageKeyId, WH_NVM_FLAGS_NONE,
                 (uint16_t)strlen((const char*)usageLabel), (uint8_t*)usageLabel);
             if (ret != 0) {
                 WH_ERROR_PRINT(

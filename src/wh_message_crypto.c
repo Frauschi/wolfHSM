@@ -843,7 +843,6 @@ int wh_MessageCrypto_TranslateMlKemKeyGenRequest(
     if ((src == NULL) || (dest == NULL)) {
         return WH_ERROR_BADARGS;
     }
-    WH_T32(magic, dest, src, sz);
     WH_T32(magic, dest, src, level);
     WH_T32(magic, dest, src, keyId);
     WH_T32(magic, dest, src, flags);
@@ -878,8 +877,6 @@ int wh_MessageCrypto_TranslateMlKemEncapsRequest(
     WH_T32(magic, dest, src, options);
     WH_T32(magic, dest, src, level);
     WH_T32(magic, dest, src, keyId);
-    WH_T32(magic, dest, src, ctSz);
-    WH_T32(magic, dest, src, ssSz);
     return 0;
 }
 
@@ -908,7 +905,6 @@ int wh_MessageCrypto_TranslateMlKemDecapsRequest(
     WH_T32(magic, dest, src, level);
     WH_T32(magic, dest, src, keyId);
     WH_T32(magic, dest, src, ctSz);
-    WH_T32(magic, dest, src, ssSz);
     return 0;
 }
 

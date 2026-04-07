@@ -24,7 +24,7 @@
 #include "wolfhsm/wh_client_crypto.h"
 
 #if !defined(WOLFHSM_CFG_NO_CRYPTO) && defined(WOLFHSM_CFG_BENCH_ENABLE)
-#include "wolfssl/wolfcrypt/mlkem.h"
+#include "wolfssl/wolfcrypt/wc_mlkem.h"
 
 #if defined(WOLFSSL_HAVE_MLKEM)
 
@@ -53,7 +53,7 @@ static int _benchMlKemKeyGen(whClientContext* client, whBenchOpContext* ctx,
         else
 #endif /* WOLFHSM_CFG_DMA */
         {
-            ret = wh_Client_MlKemMakeExportKey(client, securityLevel, 0, key);
+            ret = wh_Client_MlKemMakeExportKey(client, securityLevel, key);
         }
         benchStopRet = wh_Bench_StopOp(ctx, id);
 
@@ -97,7 +97,7 @@ static int _benchMlKemEncaps(whClientContext* client, whBenchOpContext* ctx,
     else
 #endif /* WOLFHSM_CFG_DMA */
     {
-        ret = wh_Client_MlKemMakeExportKey(client, securityLevel, 0, key);
+        ret = wh_Client_MlKemMakeExportKey(client, securityLevel, key);
     }
     if (ret != WH_ERROR_OK) {
         WH_BENCH_PRINTF("Failed ML-KEM key setup %d\n", ret);
@@ -169,7 +169,7 @@ static int _benchMlKemDecaps(whClientContext* client, whBenchOpContext* ctx,
     else
 #endif /* WOLFHSM_CFG_DMA */
     {
-        ret = wh_Client_MlKemMakeExportKey(client, securityLevel, 0, key);
+        ret = wh_Client_MlKemMakeExportKey(client, securityLevel, key);
     }
     if (ret != WH_ERROR_OK) {
         WH_BENCH_PRINTF("Failed ML-KEM key setup %d\n", ret);

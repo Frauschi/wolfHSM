@@ -953,7 +953,6 @@ int wh_MessageCrypto_TranslateMlDsaVerifyResponse(
 
 /* ML-KEM Key Generation Request */
 typedef struct {
-    uint32_t sz;
     uint32_t level;
     uint32_t keyId;
     uint32_t flags;
@@ -984,8 +983,6 @@ typedef struct {
 #define WH_MESSAGE_CRYPTO_MLKEM_ENCAPS_OPTIONS_EVICT (1 << 0)
     uint32_t level;
     uint32_t keyId;
-    uint32_t ctSz;
-    uint32_t ssSz;
     uint8_t  WH_PAD[4];
 } whMessageCrypto_MlKemEncapsRequest;
 
@@ -1014,8 +1011,6 @@ typedef struct {
     uint32_t level;
     uint32_t keyId;
     uint32_t ctSz;
-    uint32_t ssSz;
-    uint8_t  WH_PAD[4];
     /* Data follows:
      * uint8_t ct[ctSz];
      */

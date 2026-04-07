@@ -44,7 +44,7 @@
 #include "wolfssl/wolfcrypt/sha512.h"
 #include "wolfssl/wolfcrypt/cmac.h"
 #include "wolfssl/wolfcrypt/dilithium.h"
-#include "wolfssl/wolfcrypt/mlkem.h"
+#include "wolfssl/wolfcrypt/wc_mlkem.h"
 #include "wolfssl/wolfcrypt/hmac.h"
 #include "wolfssl/wolfcrypt/kdf.h"
 
@@ -4602,12 +4602,8 @@ static int _HandleMlKemEncaps(whServerContext* ctx, uint16_t magic, int devId,
     }
 
     if (ret == WH_ERROR_OK) {
-        ct_len = req.ctSz;
-        ss_len = req.ssSz;
-        if (ct_len == 0) {
-            ret = wc_MlKemKey_CipherTextSize(key, &ct_len);
-        }
-        if ((ret == WH_ERROR_OK) && (ss_len == 0)) {
+        ret = wc_MlKemKey_CipherTextSize(key, &ct_len);
+        if (ret == WH_ERROR_OK) {
             ret = wc_MlKemKey_SharedSecretSize(key, &ss_len);
         }
     }
@@ -4707,8 +4703,7 @@ static int _HandleMlKemDecaps(whServerContext* ctx, uint16_t magic, int devId,
         ret = wh_Server_MlKemKeyCacheExport(ctx, key_id, key);
     }
 
-    ss_len = req.ssSz;
-    if ((ret == WH_ERROR_OK) && (ss_len == 0)) {
+    if (ret == WH_ERROR_OK) {
         ret = wc_MlKemKey_SharedSecretSize(key, &ss_len);
     }
 

@@ -44,7 +44,7 @@
 #include "wolfssl/wolfcrypt/ecc.h"
 #include "wolfssl/wolfcrypt/ed25519.h"
 #include "wolfssl/wolfcrypt/dilithium.h"
-#include "wolfssl/wolfcrypt/mlkem.h"
+#include "wolfssl/wolfcrypt/wc_mlkem.h"
 
 #include "wolfhsm/wh_error.h"
 #include "wolfhsm/wh_utils.h"

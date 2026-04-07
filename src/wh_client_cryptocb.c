@@ -47,7 +47,7 @@
 #include "wolfssl/wolfcrypt/ecc.h"
 #include "wolfssl/wolfcrypt/sha256.h"
 #include "wolfssl/wolfcrypt/sha512.h"
-#include "wolfssl/wolfcrypt/mlkem.h"
+#include "wolfssl/wolfcrypt/wc_mlkem.h"
 
 #include "wolfhsm/wh_crypto.h"
 #include "wolfhsm/wh_client_crypto.h"
@@ -636,6 +636,8 @@ static int _handlePqcKemKeyGen(whClientContext* ctx, wc_CryptoInfo* info,
     }
 #endif
 
+    (void)size;
+
     switch (type) {
         case WC_PQC_KEM_TYPE_KYBER: {
             int level = ((MlKemKey*)key)->type;
@@ -646,7 +648,7 @@ static int _handlePqcKemKeyGen(whClientContext* ctx, wc_CryptoInfo* info,
             else
 #endif /* WOLFHSM_CFG_DMA */
             {
-                ret = wh_Client_MlKemMakeExportKey(ctx, level, size, key);
+                ret = wh_Client_MlKemMakeExportKey(ctx, level, key);
             }
         } break;
 

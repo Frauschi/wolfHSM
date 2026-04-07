@@ -55,7 +55,6 @@
 #include "wolfssl/wolfcrypt/curve25519.h"
 #include "wolfssl/wolfcrypt/ed25519.h"
 #include "wolfssl/wolfcrypt/dilithium.h"
-#include "wolfssl/wolfcrypt/mlkem.h"
 #include "wolfssl/wolfcrypt/wc_mlkem.h"
 #include "wolfssl/wolfcrypt/sha256.h"
 #include "wolfssl/wolfcrypt/sha512.h"
@@ -127,7 +126,7 @@ static int _MlDsaMakeKeyDma(whClientContext* ctx, int level,
 #endif /* HAVE_DILITHIUM */
 
 #ifdef WOLFSSL_HAVE_MLKEM
-static int _MlKemMakeKey(whClientContext* ctx, int size, int level,
+static int _MlKemMakeKey(whClientContext* ctx, int level,
                          whKeyId* inout_key_id, whNvmFlags flags,
                          uint16_t label_len, uint8_t* label, MlKemKey* key);
 #ifdef WOLFHSM_CFG_DMA
@@ -6484,7 +6483,7 @@ int wh_Client_MlKemImportKey(whClientContext* ctx, MlKemKey* key,
 {
     int      ret    = WH_ERROR_OK;
     whKeyId  key_id = WH_KEYID_ERASED;
-    byte     buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE];
+    byte*    buffer = NULL;
     uint16_t buffer_len = 0;
 
     if ((ctx == NULL) || (key == NULL) ||
@@ -6492,11 +6491,20 @@ int wh_Client_MlKemImportKey(whClientContext* ctx, MlKemKey* key,
         return WH_ERROR_BADARGS;
     }
 
+    buffer = (byte*)XMALLOC(WC_ML_KEM_MAX_PRIVATE_KEY_SIZE, NULL,
+                            DYNAMIC_TYPE_TMP_BUFFER);
+    if (buffer == NULL) {
+        return WH_ERROR_ABORTED;
+    }
+
     if (inout_keyId != NULL) {
         key_id = *inout_keyId;
     }
 
-    ret = wh_Crypto_MlKemSerializeKey(key, sizeof(buffer), buffer, &buffer_len);
+    ret = wh_Crypto_MlKemSerializeKey(key, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE,
+                                      buffer, &buffer_len);
+    WH_DEBUG_CLIENT_VERBOSE("MlKemImportKey: serialize ret:%d, len:%u\n",
+                            ret, (unsigned int)buffer_len);
     if (ret == WH_ERROR_OK) {
         ret = wh_Client_KeyCache(ctx, flags, label, label_len, buffer,
                                  buffer_len, &key_id);
@@ -6504,31 +6512,43 @@ int wh_Client_MlKemImportKey(whClientContext* ctx, MlKemKey* key,
             *inout_keyId = key_id;
         }
     }
+    WH_DEBUG_CLIENT_VERBOSE("MlKemImportKey: ret:%d keyId:%u\n", ret, key_id);
 
+    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
 
 int wh_Client_MlKemExportKey(whClientContext* ctx, whKeyId keyId, MlKemKey* key,
                              uint16_t label_len, uint8_t* label)
 {
-    int ret = WH_ERROR_OK;
-    byte     buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE];
-    uint16_t buffer_len = sizeof(buffer);
+    int      ret = WH_ERROR_OK;
+    byte*    buffer = NULL;
+    uint16_t buffer_len = WC_ML_KEM_MAX_PRIVATE_KEY_SIZE;
 
     if ((ctx == NULL) || WH_KEYID_ISERASED(keyId) || (key == NULL)) {
         return WH_ERROR_BADARGS;
     }
 
+    buffer = (byte*)XMALLOC(WC_ML_KEM_MAX_PRIVATE_KEY_SIZE, NULL,
+                            DYNAMIC_TYPE_TMP_BUFFER);
+    if (buffer == NULL) {
+        return WH_ERROR_ABORTED;
+    }
+
     ret =
         wh_Client_KeyExport(ctx, keyId, label, label_len, buffer, &buffer_len);
+    WH_DEBUG_CLIENT_VERBOSE("MlKemExportKey: export ret:%d, len:%u\n",
+                            ret, (unsigned int)buffer_len);
     if (ret == WH_ERROR_OK) {
         ret = wh_Crypto_MlKemDeserializeKey(buffer, buffer_len, key);
     }
+    WH_DEBUG_CLIENT_VERBOSE("MlKemExportKey: keyId:%x ret:%d\n", keyId, ret);
 
+    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
 
-static int _MlKemMakeKey(whClientContext* ctx, int size, int level,
+static int _MlKemMakeKey(whClientContext* ctx, int level,
                          whKeyId* inout_key_id, whNvmFlags flags,
                          uint16_t label_len, uint8_t* label, MlKemKey* key)
 {
@@ -6555,63 +6575,71 @@ static int _MlKemMakeKey(whClientContext* ctx, int size, int level,
         key_id = *inout_key_id;
     }
 
-    if (ret == WH_ERROR_OK) {
+    {
         uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
         uint16_t action = WC_ALGO_TYPE_PK;
         uint16_t req_len =
             sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+        uint16_t res_len;
 
-        if (req_len <= WOLFHSM_CFG_COMM_DATA_LEN) {
-            memset(req, 0, sizeof(*req));
-            req->level = level;
-            req->sz    = size;
-            req->flags = flags;
-            req->keyId = key_id;
-            if ((label != NULL) && (label_len > 0)) {
-                if (label_len > WH_NVM_LABEL_LEN) {
-                    label_len = WH_NVM_LABEL_LEN;
-                }
-                memcpy(req->label, label, label_len);
-            }
-
-            ret = wh_Client_SendRequest(ctx, group, action, req_len,
-                                        (uint8_t*)dataPtr);
-            if (ret == WH_ERROR_OK) {
-                uint16_t res_len;
-                do {
-                    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
-                                                 (uint8_t*)dataPtr);
-                } while (ret == WH_ERROR_NOTREADY);
-
-                if (ret == WH_ERROR_OK) {
-                    ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_PQC_KEM_KEYGEN,
-                                             (uint8_t**)&res);
-                    if (ret >= 0) {
-                        key_id = (whKeyId)res->keyId;
-                        if (inout_key_id != NULL) {
-                            *inout_key_id = key_id;
-                        }
-                        if (key != NULL) {
-                            wh_Client_MlKemSetKeyId(key, key_id);
-                            if ((flags & WH_NVM_FLAGS_EPHEMERAL) != 0) {
-                                uint8_t* key_raw = (uint8_t*)(res + 1);
-                                ret = wh_Crypto_MlKemDeserializeKey(
-                                    key_raw, (uint16_t)res->len, key);
-                            }
-                        }
-                    }
-                }
-            }
+        /* Defense in depth: ensure request fits in comm buffer */
+        if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
+            return WH_ERROR_BADARGS;
         }
-        else {
-            ret = WH_ERROR_BADARGS;
+
+        memset(req, 0, sizeof(*req));
+        req->level = level;
+        req->flags = flags;
+        req->keyId = key_id;
+        if ((label != NULL) && (label_len > 0)) {
+            if (label_len > WH_NVM_LABEL_LEN) {
+                label_len = WH_NVM_LABEL_LEN;
+            }
+            memcpy(req->label, label, label_len);
+        }
+
+        ret = wh_Client_SendRequest(ctx, group, action, req_len,
+                                    (uint8_t*)dataPtr);
+        WH_DEBUG_CLIENT_VERBOSE("MlKemMakeKey: Req sent:level:%d, "
+                                "ret:%d\n", level, ret);
+        if (ret != WH_ERROR_OK) {
+            return ret;
+        }
+
+        do {
+            ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
+                                         (uint8_t*)dataPtr);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret != WH_ERROR_OK) {
+            return ret;
+        }
+
+        ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_PQC_KEM_KEYGEN,
+                                 (uint8_t**)&res);
+        if (ret >= 0) {
+            key_id = (whKeyId)res->keyId;
+            WH_DEBUG_CLIENT_VERBOSE("MlKemMakeKey: Res recv:"
+                                    "keyId:%u, len:%u, ret:%d\n",
+                                    (unsigned int)res->keyId,
+                                    (unsigned int)res->len, ret);
+            if (inout_key_id != NULL) {
+                *inout_key_id = key_id;
+            }
+            if (key != NULL) {
+                wh_Client_MlKemSetKeyId(key, key_id);
+                if ((flags & WH_NVM_FLAGS_EPHEMERAL) != 0) {
+                    uint8_t* key_raw = (uint8_t*)(res + 1);
+                    ret = wh_Crypto_MlKemDeserializeKey(
+                        key_raw, (uint16_t)res->len, key);
+                }
+            }
         }
     }
 
     return ret;
 }
 
-int wh_Client_MlKemMakeCacheKey(whClientContext* ctx, int size, int level,
+int wh_Client_MlKemMakeCacheKey(whClientContext* ctx, int level,
                                 whKeyId* inout_key_id, whNvmFlags flags,
                                 uint16_t label_len, uint8_t* label)
 {
@@ -6619,18 +6647,18 @@ int wh_Client_MlKemMakeCacheKey(whClientContext* ctx, int size, int level,
         return WH_ERROR_BADARGS;
     }
 
-    return _MlKemMakeKey(ctx, size, level, inout_key_id, flags, label_len,
+    return _MlKemMakeKey(ctx, level, inout_key_id, flags, label_len,
                          label, NULL);
 }
 
-int wh_Client_MlKemMakeExportKey(whClientContext* ctx, int level, int size,
+int wh_Client_MlKemMakeExportKey(whClientContext* ctx, int level,
                                  MlKemKey* key)
 {
     if (key == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    return _MlKemMakeKey(ctx, size, level, NULL, WH_NVM_FLAGS_EPHEMERAL, 0,
+    return _MlKemMakeKey(ctx, level, NULL, WH_NVM_FLAGS_EPHEMERAL, 0,
                          NULL, key);
 }
 
@@ -6645,17 +6673,13 @@ int wh_Client_MlKemEncapsulate(whClientContext* ctx, MlKemKey* key,
 
     whKeyId key_id;
     int     evict = 0;
-    word32  ct_len;
-    word32  ss_len;
 
     if ((ctx == NULL) || (key == NULL) || (ct == NULL) || (ss == NULL) ||
         (inout_ct_len == NULL) || (inout_ss_len == NULL)) {
         return WH_ERROR_BADARGS;
     }
 
-    ct_len = *inout_ct_len;
-    ss_len = *inout_ss_len;
-    if ((ct_len == 0) || (ss_len == 0)) {
+    if ((*inout_ct_len == 0) || (*inout_ss_len == 0)) {
         return WH_ERROR_BADARGS;
     }
 
@@ -6696,11 +6720,13 @@ int wh_Client_MlKemEncapsulate(whClientContext* ctx, MlKemKey* key,
             req->options = options;
             req->level   = key->type;
             req->keyId   = key_id;
-            req->ctSz    = ct_len;
-            req->ssSz    = ss_len;
 
             ret = wh_Client_SendRequest(ctx, group, action, req_len,
                                         (uint8_t*)dataPtr);
+            WH_DEBUG_CLIENT_VERBOSE("MlKemEncapsulate: Req sent:keyId:%u, "
+                                    "level:%u, ret:%d\n",
+                                    (unsigned int)key_id,
+                                    (unsigned int)key->type, ret);
             if (ret == WH_ERROR_OK) {
                 evict = 0;
                 do {
@@ -6716,16 +6742,20 @@ int wh_Client_MlKemEncapsulate(whClientContext* ctx, MlKemKey* key,
                     uint8_t* resp_data = (uint8_t*)(res + 1);
                     word32 out_ct_len = res->ctSz;
                     word32 out_ss_len = res->ssSz;
-                    if (out_ct_len > *inout_ct_len) {
-                        out_ct_len = *inout_ct_len;
+                    WH_DEBUG_CLIENT_VERBOSE("MlKemEncapsulate: Res recv:"
+                                            "ctSz:%u, ssSz:%u, ret:%d\n",
+                                            (unsigned int)out_ct_len,
+                                            (unsigned int)out_ss_len, ret);
+                    if (*inout_ct_len < out_ct_len ||
+                        *inout_ss_len < out_ss_len) {
+                        ret = WH_ERROR_BADARGS;
                     }
-                    if (out_ss_len > *inout_ss_len) {
-                        out_ss_len = *inout_ss_len;
+                    else {
+                        memcpy(ct, resp_data, out_ct_len);
+                        memcpy(ss, resp_data + out_ct_len, out_ss_len);
+                        *inout_ct_len = out_ct_len;
+                        *inout_ss_len = out_ss_len;
                     }
-                    memcpy(ct, resp_data, out_ct_len);
-                    memcpy(ss, resp_data + res->ctSz, out_ss_len);
-                    *inout_ct_len = out_ct_len;
-                    *inout_ss_len = out_ss_len;
                 }
             }
         }
@@ -6799,13 +6829,16 @@ int wh_Client_MlKemDecapsulate(whClientContext* ctx, MlKemKey* key,
             req->level   = key->type;
             req->keyId   = key_id;
             req->ctSz    = ct_len;
-            req->ssSz    = *inout_ss_len;
             if ((ct != NULL) && (ct_len > 0)) {
                 memcpy(req_ct, ct, ct_len);
             }
 
             ret = wh_Client_SendRequest(ctx, group, action, req_len,
                                         (uint8_t*)dataPtr);
+            WH_DEBUG_CLIENT_VERBOSE("MlKemDecapsulate: Req sent:keyId:%u, "
+                                    "ctSz:%u, ret:%d\n",
+                                    (unsigned int)key_id,
+                                    (unsigned int)ct_len, ret);
             if (ret == WH_ERROR_OK) {
                 evict = 0;
                 do {
@@ -6820,11 +6853,16 @@ int wh_Client_MlKemDecapsulate(whClientContext* ctx, MlKemKey* key,
                 if (ret >= 0) {
                     uint8_t* resp_ss = (uint8_t*)(res + 1);
                     word32 out_ss_len = res->ssSz;
-                    if (out_ss_len > *inout_ss_len) {
-                        out_ss_len = *inout_ss_len;
+                    WH_DEBUG_CLIENT_VERBOSE("MlKemDecapsulate: Res recv:"
+                                            "ssSz:%u, ret:%d\n",
+                                            (unsigned int)out_ss_len, ret);
+                    if (*inout_ss_len < out_ss_len) {
+                        ret = WH_ERROR_BADARGS;
                     }
-                    memcpy(ss, resp_ss, out_ss_len);
-                    *inout_ss_len = out_ss_len;
+                    else {
+                        memcpy(ss, resp_ss, out_ss_len);
+                        *inout_ss_len = out_ss_len;
+                    }
                 }
             }
         }
@@ -6847,7 +6885,7 @@ int wh_Client_MlKemImportKeyDma(whClientContext* ctx, MlKemKey* key,
 {
     int      ret = WH_ERROR_OK;
     whKeyId  key_id = WH_KEYID_ERASED;
-    byte     buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE];
+    byte*    buffer = NULL;
     uint16_t buffer_len = 0;
 
     if ((ctx == NULL) || (key == NULL) ||
@@ -6855,11 +6893,20 @@ int wh_Client_MlKemImportKeyDma(whClientContext* ctx, MlKemKey* key,
         return WH_ERROR_BADARGS;
     }
 
+    buffer = (byte*)XMALLOC(WC_ML_KEM_MAX_PRIVATE_KEY_SIZE, NULL,
+                            DYNAMIC_TYPE_TMP_BUFFER);
+    if (buffer == NULL) {
+        return WH_ERROR_ABORTED;
+    }
+
     if (inout_keyId != NULL) {
         key_id = *inout_keyId;
     }
 
-    ret = wh_Crypto_MlKemSerializeKey(key, sizeof(buffer), buffer, &buffer_len);
+    ret = wh_Crypto_MlKemSerializeKey(key, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE,
+                                      buffer, &buffer_len);
+    WH_DEBUG_CLIENT_VERBOSE("MlKemImportKeyDma: serialize ret:%d, len:%u\n",
+                            ret, (unsigned int)buffer_len);
     if (ret == WH_ERROR_OK) {
         ret = wh_Client_KeyCacheDma(ctx, flags, label, label_len, buffer,
                                     buffer_len, &key_id);
@@ -6867,7 +6914,10 @@ int wh_Client_MlKemImportKeyDma(whClientContext* ctx, MlKemKey* key,
             *inout_keyId = key_id;
         }
     }
+    WH_DEBUG_CLIENT_VERBOSE("MlKemImportKeyDma: ret:%d keyId:%u\n",
+                            ret, key_id);
 
+    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
 
@@ -6876,19 +6926,31 @@ int wh_Client_MlKemExportKeyDma(whClientContext* ctx, whKeyId keyId,
                                 uint8_t* label)
 {
     int      ret = WH_ERROR_OK;
-    byte     buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE] = {0};
-    uint16_t buffer_len = sizeof(buffer);
+    byte*    buffer = NULL;
+    uint16_t buffer_len = WC_ML_KEM_MAX_PRIVATE_KEY_SIZE;
 
     if ((ctx == NULL) || WH_KEYID_ISERASED(keyId) || (key == NULL)) {
         return WH_ERROR_BADARGS;
     }
 
+    buffer = (byte*)XMALLOC(WC_ML_KEM_MAX_PRIVATE_KEY_SIZE, NULL,
+                            DYNAMIC_TYPE_TMP_BUFFER);
+    if (buffer == NULL) {
+        return WH_ERROR_ABORTED;
+    }
+    memset(buffer, 0, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
+
     ret = wh_Client_KeyExportDma(ctx, keyId, buffer, buffer_len, label,
                                  label_len, &buffer_len);
+    WH_DEBUG_CLIENT_VERBOSE("MlKemExportKeyDma: export ret:%d, len:%u\n",
+                            ret, (unsigned int)buffer_len);
     if (ret == WH_ERROR_OK) {
         ret = wh_Crypto_MlKemDeserializeKey(buffer, buffer_len, key);
     }
+    WH_DEBUG_CLIENT_VERBOSE("MlKemExportKeyDma: keyId:%x ret:%d\n",
+                            keyId, ret);
 
+    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
 
@@ -6898,19 +6960,26 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
 {
     int                                     ret = WH_ERROR_OK;
     whKeyId                                 key_id = WH_KEYID_ERASED;
-    byte                                    buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE];
+    byte*                                   buffer = NULL;
     uint8_t*                                dataPtr = NULL;
     whMessageCrypto_MlKemKeyGenDmaRequest*  req = NULL;
     whMessageCrypto_MlKemKeyGenDmaResponse* res = NULL;
     uintptr_t                               keyAddr = 0;
-    uint64_t                                keyAddrSz = sizeof(buffer);
+    uint64_t                                keyAddrSz = WC_ML_KEM_MAX_PRIVATE_KEY_SIZE;
 
     if (ctx == NULL) {
         return WH_ERROR_BADARGS;
     }
 
+    buffer = (byte*)XMALLOC(WC_ML_KEM_MAX_PRIVATE_KEY_SIZE, NULL,
+                            DYNAMIC_TYPE_TMP_BUFFER);
+    if (buffer == NULL) {
+        return WH_ERROR_ABORTED;
+    }
+
     dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
+        XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
         return WH_ERROR_BADARGS;
     }
 
@@ -6988,6 +7057,7 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
         }
     }
 
+    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
 
