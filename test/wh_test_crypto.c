@@ -5269,7 +5269,7 @@ static int whTestCrypto_MlKemClient(whClientContext* ctx, int devId, WC_RNG* rng
             }
         }
         if (ret == 0) {
-            ret = wh_Client_MlKemMakeExportKey(ctx, levels[i], 0, wrongKey);
+            ret = wh_Client_MlKemMakeExportKey(ctx, levels[i], wrongKey);
             if (ret != 0) {
                 WH_ERROR_PRINT(
                     "Failed ML-KEM make wrong export key level=%d ret=%d\n",

@@ -6514,6 +6514,7 @@ int wh_Client_MlKemImportKey(whClientContext* ctx, MlKemKey* key,
     }
     WH_DEBUG_CLIENT_VERBOSE("MlKemImportKey: ret:%d keyId:%u\n", ret, key_id);
 
+    ForceZero(buffer, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
     XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
@@ -6544,6 +6545,7 @@ int wh_Client_MlKemExportKey(whClientContext* ctx, whKeyId keyId, MlKemKey* key,
     }
     WH_DEBUG_CLIENT_VERBOSE("MlKemExportKey: keyId:%x ret:%d\n", keyId, ret);
 
+    ForceZero(buffer, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
     XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
@@ -6703,6 +6705,9 @@ int wh_Client_MlKemEncapsulate(whClientContext* ctx, MlKemKey* key,
 
         dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
         if (dataPtr == NULL) {
+            if (evict != 0) {
+                (void)wh_Client_KeyEvict(ctx, key_id);
+            }
             return WH_ERROR_BADARGS;
         }
 
@@ -6742,11 +6747,14 @@ int wh_Client_MlKemEncapsulate(whClientContext* ctx, MlKemKey* key,
                     uint8_t* resp_data = (uint8_t*)(res + 1);
                     word32 out_ct_len = res->ctSz;
                     word32 out_ss_len = res->ssSz;
+                    word32 max_resp = WOLFHSM_CFG_COMM_DATA_LEN -
+                        (uint16_t)((uint8_t*)resp_data - dataPtr);
                     WH_DEBUG_CLIENT_VERBOSE("MlKemEncapsulate: Res recv:"
                                             "ctSz:%u, ssSz:%u, ret:%d\n",
                                             (unsigned int)out_ct_len,
                                             (unsigned int)out_ss_len, ret);
-                    if (*inout_ct_len < out_ct_len ||
+                    if (out_ct_len + out_ss_len > max_resp ||
+                        *inout_ct_len < out_ct_len ||
                         *inout_ss_len < out_ss_len) {
                         ret = WH_ERROR_BADARGS;
                     }
@@ -6808,6 +6816,9 @@ int wh_Client_MlKemDecapsulate(whClientContext* ctx, MlKemKey* key,
 
         dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
         if (dataPtr == NULL) {
+            if (evict != 0) {
+                (void)wh_Client_KeyEvict(ctx, key_id);
+            }
             return WH_ERROR_BADARGS;
         }
 
@@ -6853,10 +6864,13 @@ int wh_Client_MlKemDecapsulate(whClientContext* ctx, MlKemKey* key,
                 if (ret >= 0) {
                     uint8_t* resp_ss = (uint8_t*)(res + 1);
                     word32 out_ss_len = res->ssSz;
+                    word32 max_resp = WOLFHSM_CFG_COMM_DATA_LEN -
+                        (uint16_t)((uint8_t*)resp_ss - dataPtr);
                     WH_DEBUG_CLIENT_VERBOSE("MlKemDecapsulate: Res recv:"
                                             "ssSz:%u, ret:%d\n",
                                             (unsigned int)out_ss_len, ret);
-                    if (*inout_ss_len < out_ss_len) {
+                    if (out_ss_len > max_resp ||
+                        *inout_ss_len < out_ss_len) {
                         ret = WH_ERROR_BADARGS;
                     }
                     else {
@@ -6917,6 +6931,7 @@ int wh_Client_MlKemImportKeyDma(whClientContext* ctx, MlKemKey* key,
     WH_DEBUG_CLIENT_VERBOSE("MlKemImportKeyDma: ret:%d keyId:%u\n",
                             ret, key_id);
 
+    ForceZero(buffer, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
     XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
@@ -6950,6 +6965,7 @@ int wh_Client_MlKemExportKeyDma(whClientContext* ctx, whKeyId keyId,
     WH_DEBUG_CLIENT_VERBOSE("MlKemExportKeyDma: keyId:%x ret:%d\n",
                             keyId, ret);
 
+    ForceZero(buffer, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
     XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
@@ -6979,6 +6995,7 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
 
     dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
+        ForceZero(buffer, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
         XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
         return WH_ERROR_BADARGS;
     }
@@ -7057,6 +7074,7 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
         }
     }
 
+    ForceZero(buffer, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
     XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     return ret;
 }
@@ -7110,6 +7128,9 @@ int wh_Client_MlKemEncapsulateDma(whClientContext* ctx, MlKemKey* key,
 
         dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
         if (dataPtr == NULL) {
+            if (evict != 0) {
+                (void)wh_Client_KeyEvict(ctx, key_id);
+            }
             return WH_ERROR_BADARGS;
         }
 
@@ -7224,6 +7245,9 @@ int wh_Client_MlKemDecapsulateDma(whClientContext* ctx, MlKemKey* key,
 
         dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
         if (dataPtr == NULL) {
+            if (evict != 0) {
+                (void)wh_Client_KeyEvict(ctx, key_id);
+            }
             return WH_ERROR_BADARGS;
         }
 

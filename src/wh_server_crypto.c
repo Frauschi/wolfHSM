@@ -6127,6 +6127,8 @@ static int _HandleMlKemKeyGenDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_MlKemKeyGenDmaRequest req;
     whMessageCrypto_MlKemKeyGenDmaResponse res;
 
+    memset(&res, 0, sizeof(res));
+
     if (inSize < sizeof(whMessageCrypto_MlKemKeyGenDmaRequest)) {
         return WH_ERROR_BADARGS;
     }
@@ -6216,12 +6218,14 @@ static int _HandleMlKemEncapsDma(whServerContext* ctx, uint16_t magic,
     MlKemKey                              key[1];
     void*                                 ctAddr = NULL;
     void*                                 ssAddr = NULL;
-    word32                                ctLen;
-    word32                                ssLen;
+    word32                                ctLen = 0;
+    word32                                ssLen = 0;
     whKeyId                               key_id;
-    int                                   evict;
+    int                                   evict = 0;
     whMessageCrypto_MlKemEncapsDmaRequest req;
     whMessageCrypto_MlKemEncapsDmaResponse res;
+
+    memset(&res, 0, sizeof(res));
 
     if (inSize < sizeof(whMessageCrypto_MlKemEncapsDmaRequest)) {
         return WH_ERROR_BADARGS;
@@ -6334,11 +6338,13 @@ static int _HandleMlKemDecapsDma(whServerContext* ctx, uint16_t magic,
     MlKemKey                              key[1];
     void*                                 ctAddr = NULL;
     void*                                 ssAddr = NULL;
-    word32                                ssLen;
+    word32                                ssLen = 0;
     whKeyId                               key_id;
-    int                                   evict;
+    int                                   evict = 0;
     whMessageCrypto_MlKemDecapsDmaRequest req;
     whMessageCrypto_MlKemDecapsDmaResponse res;
+
+    memset(&res, 0, sizeof(res));
 
     if (inSize < sizeof(whMessageCrypto_MlKemDecapsDmaRequest)) {
         return WH_ERROR_BADARGS;
