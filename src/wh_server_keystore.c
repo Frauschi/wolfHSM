@@ -1237,8 +1237,8 @@ static int _HandleKeyWrapRequest(whServerContext*                  server,
     }
 
     /* Translate the server key id passed in from the client */
-    serverKeyId = wh_KeyId_TranslateFromClient(WH_KEYTYPE_CRYPTO, 
-                                               server->comm->client_id, 
+    serverKeyId = wh_KeyId_TranslateFromClient(WH_KEYTYPE_CRYPTO,
+                                               server->comm->client_id,
                                                req->serverKeyId);
 
     /* Store the wrapped key in the response data */
@@ -1304,8 +1304,8 @@ static int _HandleKeyUnwrapAndExportRequest(
     wrappedKey = reqData;
 
     /* Translate the server key id passed in from the client */
-    serverKeyId = wh_KeyId_TranslateFromClient(WH_KEYTYPE_CRYPTO, 
-                                               server->comm->client_id, 
+    serverKeyId = wh_KeyId_TranslateFromClient(WH_KEYTYPE_CRYPTO,
+                                               server->comm->client_id,
                                                req->serverKeyId);
 
     /* Ensure the cipher type in the response matches the request */
@@ -1424,8 +1424,8 @@ static int _HandleKeyUnwrapAndCacheRequest(
     wrappedKey = reqData;
 
     /* Translate the server key id passed in from the client */
-    serverKeyId = wh_KeyId_TranslateFromClient(WH_KEYTYPE_CRYPTO, 
-                                               server->comm->client_id, 
+    serverKeyId = wh_KeyId_TranslateFromClient(WH_KEYTYPE_CRYPTO,
+                                               server->comm->client_id,
                                                req->serverKeyId);
 
     /* Ensure the cipher type in the response matches the request */
@@ -1535,8 +1535,8 @@ static int _HandleDataWrapRequest(whServerContext*                   server,
     memcpy(data, reqData, req->dataSz);
 
     /* Translate the server key id passed in from the client */
-    serverKeyId = wh_KeyId_TranslateFromClient(WH_KEYTYPE_CRYPTO, 
-                                               server->comm->client_id, 
+    serverKeyId = wh_KeyId_TranslateFromClient(WH_KEYTYPE_CRYPTO,
+                                               server->comm->client_id,
                                                req->serverKeyId);
 
     /* Ensure the cipher type in the response matches the request */
@@ -1806,7 +1806,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
                 }
 
                 if (ret == WH_ERROR_OK) {
-                    resp.len = req.key.sz;
+                    resp.len = meta->len;
                     memcpy(resp.label, meta->label, sizeof(meta->label));
                 }
 
