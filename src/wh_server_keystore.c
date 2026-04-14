@@ -2003,7 +2003,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
                     }
 
                     if (ret == WH_ERROR_OK) {
-                        resp.len = req.key.sz;
+                        resp.len = meta->len;
                         memcpy(resp.label, meta->label, sizeof(meta->label));
                     }
 
@@ -2413,7 +2413,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
 
             (void)wh_MessageKeystore_TranslateRevokeResponse(
                 magic, &resp, (whMessageKeystore_RevokeResponse*)resp_packet);
-            
+
             *out_resp_size = sizeof(resp);
         } break;
 
