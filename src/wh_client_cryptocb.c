@@ -259,8 +259,10 @@ int wh_Client_CryptoCb(int devId, wc_CryptoInfo* info, void* inCtx)
             ret = wh_Client_EccSharedSecret(ctx,
                                             priv_key, pub_key,
                                             out, &len);
-            if (    (ret == WH_ERROR_OK) &&
-                    (out_len != NULL) ) {
+            /* Propagate updated length on BUFFER_SIZE so callers can re-call
+             * with a sufficiently large output buffer. */
+            if (((ret == WH_ERROR_OK) || (ret == WH_ERROR_BUFFER_SIZE)) &&
+                (out_len != NULL)) {
                 *out_len = len;
             }
         } break;
@@ -282,8 +284,10 @@ int wh_Client_CryptoCb(int devId, wc_CryptoInfo* info, void* inCtx)
             }
 
             ret = wh_Client_EccSign(ctx, key, hash, hash_len, sig, &sig_len);
-            if (    (ret == WH_ERROR_OK) &&
-                    (out_sig_len != NULL) ) {
+            /* Propagate updated length on BUFFER_SIZE so callers can re-call
+             * with a sufficiently large output buffer. */
+            if (((ret == WH_ERROR_OK) || (ret == WH_ERROR_BUFFER_SIZE)) &&
+                (out_sig_len != NULL)) {
                 *out_sig_len = sig_len;
             }
         } break;
@@ -583,6 +587,9 @@ int wh_Client_CryptoCb(int devId, wc_CryptoInfo* info, void* inCtx)
     /* Fix up error code to be wolfCrypt */
     if (ret == WH_ERROR_BADARGS) {
         ret = BAD_FUNC_ARG;
+    }
+    else if (ret == WH_ERROR_BUFFER_SIZE) {
+        ret = BUFFER_E;
     }
 
     if (ret == CRYPTOCB_UNAVAILABLE) {
