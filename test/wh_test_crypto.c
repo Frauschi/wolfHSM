@@ -1824,7 +1824,9 @@ static int whTest_CryptoSha256Async(whClientContext* ctx, int devId,
         (void)wc_Sha256Free(sha256);
         ret = wc_InitSha256_ex(sha256, NULL, devId);
         while (ret == 0 && consumed < BUFSZ) {
-            uint32_t chunk = 700; /* arbitrary, less than max inline */
+            /* arbitrary, 70% of max inline */
+            uint32_t chunk =
+                (WH_MESSAGE_CRYPTO_SHA256_MAX_INLINE_UPDATE_SZ * 7 / 10);
             if (consumed + chunk > BUFSZ) {
                 chunk = BUFSZ - consumed;
             }
@@ -2337,7 +2339,9 @@ static int whTest_CryptoSha224Async(whClientContext* ctx, int devId,
         (void)wc_Sha224Free(sha224);
         ret = wc_InitSha224_ex(sha224, NULL, devId);
         while (ret == 0 && consumed < BUFSZ) {
-            uint32_t chunk = 700; /* arbitrary, less than max inline */
+            /* arbitrary, 70% of max inline */
+            uint32_t chunk =
+                (WH_MESSAGE_CRYPTO_SHA224_MAX_INLINE_UPDATE_SZ * 7 / 10);
             if (consumed + chunk > BUFSZ) {
                 chunk = BUFSZ - consumed;
             }
@@ -2857,7 +2861,9 @@ static int whTest_CryptoSha384Async(whClientContext* ctx, int devId,
         (void)wc_Sha384Free(sha384);
         ret = wc_InitSha384_ex(sha384, NULL, devId);
         while (ret == 0 && consumed < BUFSZ) {
-            uint32_t chunk = 1400; /* arbitrary, less than max inline */
+            /* arbitrary, 70% of max inline */
+            uint32_t chunk =
+                (WH_MESSAGE_CRYPTO_SHA384_MAX_INLINE_UPDATE_SZ * 7 / 10);
             if (consumed + chunk > BUFSZ) {
                 chunk = BUFSZ - consumed;
             }
@@ -3381,7 +3387,9 @@ static int whTest_CryptoSha512Async(whClientContext* ctx, int devId,
         (void)wc_Sha512Free(sha512);
         ret = wc_InitSha512_ex(sha512, NULL, devId);
         while (ret == 0 && consumed < BUFSZ) {
-            uint32_t chunk = 1400; /* arbitrary, less than max inline */
+            /* arbitrary, 70% of max inline */
+            uint32_t chunk =
+                (WH_MESSAGE_CRYPTO_SHA512_MAX_INLINE_UPDATE_SZ * 7 / 10);
             if (consumed + chunk > BUFSZ) {
                 chunk = BUFSZ - consumed;
             }
@@ -5904,14 +5912,14 @@ static int whTestCrypto_MlDsaClient(whClientContext* ctx, int devId,
         word32 sigLen   = sizeof(sig);
         int    verified = 0;
 
-        ret = wh_Client_MlDsaSign(ctx, msg, sizeof(msg), sig, &sigLen, key, 
+        ret = wh_Client_MlDsaSign(ctx, msg, sizeof(msg), sig, &sigLen, key,
                                      NULL, 0, WC_HASH_TYPE_NONE);
         if (ret != 0) {
             WH_ERROR_PRINT("Failed to sign using ML-DSA non-DMA: %d\n", ret);
         }
         else {
             ret = wh_Client_MlDsaVerify(ctx, sig, sigLen, msg, sizeof(msg),
-                                        &verified, key, NULL, 0, 
+                                        &verified, key, NULL, 0,
                                         WC_HASH_TYPE_NONE);
             if (ret != 0) {
                 WH_ERROR_PRINT("Failed to verify ML-DSA non-DMA: %d\n", ret);
@@ -6105,7 +6113,7 @@ static int whTestCrypto_MlDsaDmaClient(whClientContext* ctx, int devId,
         else {
             /* Verify the signature - should succeed */
             ret = wh_Client_MlDsaVerifyDma(ctx, sig, sigLen, msg, sizeof(msg),
-                                           &verified, key, NULL, 0, 
+                                           &verified, key, NULL, 0,
                                            WC_HASH_TYPE_NONE);
             if (ret != 0) {
                 WH_ERROR_PRINT("Failed to verify signature using ML-DSA: %d\n",
