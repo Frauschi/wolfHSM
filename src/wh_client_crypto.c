@@ -175,155 +175,232 @@ static int _getCryptoResponse(uint8_t* respBuf, uint16_t type,
 }
 
 /** Implementations */
-int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size)
+int wh_Client_RngGenerateRequest(whClientContext* ctx, uint32_t size)
 {
-    int                          ret = WH_ERROR_OK;
-    whMessageCrypto_RngRequest*  req;
-    whMessageCrypto_RngResponse* res;
-    uint8_t*                     dataPtr;
-    uint8_t*                     reqData;
+    whMessageCrypto_RngRequest* req;
+    uint8_t*                    dataPtr;
+    uint16_t                    req_len;
 
-    if (ctx == NULL) {
+    if (ctx == NULL || size == 0) {
+        return WH_ERROR_BADARGS;
+    }
+    if (size > WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Get data buffer */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Setup generic header and get pointer to request data */
-    reqData =
-        _createCryptoRequest(dataPtr, WC_ALGO_TYPE_RNG, ctx->cryptoAffinity);
+    req = (whMessageCrypto_RngRequest*)_createCryptoRequest(
+        dataPtr, WC_ALGO_TYPE_RNG, ctx->cryptoAffinity);
+    req->sz = size;
 
-    /* Setup request header */
-    req = (whMessageCrypto_RngRequest*)reqData;
+    req_len =
+        (uint16_t)(sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req));
 
-    /* Calculate maximum data size client can request (subtract headers) */
-    const uint32_t client_max_data =
-        WOLFHSM_CFG_COMM_DATA_LEN -
-        sizeof(whMessageCrypto_GenericRequestHeader) -
-        sizeof(whMessageCrypto_RngRequest);
+    WH_DEBUG_CLIENT_VERBOSE("RNG req: size=%u\n", (unsigned int)size);
 
-    while ((size > 0) && (ret == WH_ERROR_OK)) {
-        /* Request Message */
-        uint16_t group   = WH_MESSAGE_GROUP_CRYPTO;
-        uint16_t action  = WC_ALGO_TYPE_RNG;
-        uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                           sizeof(whMessageCrypto_RngRequest);
-        uint16_t res_len;
+    return wh_Client_SendRequest(ctx, WH_MESSAGE_GROUP_CRYPTO, WC_ALGO_TYPE_RNG,
+                                 req_len, dataPtr);
+}
 
-        /* Request up to client max, but no more than remaining size */
-        uint32_t chunk_size = (size < client_max_data) ? size : client_max_data;
-        req->sz             = chunk_size;
+int wh_Client_RngGenerateResponse(whClientContext* ctx, uint8_t* out,
+                                  uint32_t* inout_size)
+{
+    int                          ret;
+    uint16_t                     group;
+    uint16_t                     action;
+    uint16_t                     res_len = 0;
+    uint8_t*                     dataPtr;
+    whMessageCrypto_RngResponse* res = NULL;
 
-        WH_DEBUG_CLIENT_VERBOSE("RNG: size:%u reqsz:%u remaining:%u\n",
-               (unsigned int)chunk_size, (unsigned int)req_len,
-               (unsigned int)size);
-        WH_DEBUG_CLIENT_VERBOSE("RNG: req:%p\n", req);
+    if (ctx == NULL || inout_size == NULL ||
+        (out == NULL && *inout_size != 0)) {
+        return WH_ERROR_BADARGS;
+    }
 
-        /* Send request and get response */
-        ret = wh_Client_SendRequest(ctx, group, action, req_len, dataPtr);
-        if (ret == 0) {
-            do {
-                ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
-                                             dataPtr);
-            } while (ret == WH_ERROR_NOTREADY);
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len, dataPtr);
+    if (ret != WH_ERROR_OK) {
+        return ret;
+    }
+
+    ret = _getCryptoResponse(dataPtr, WC_ALGO_TYPE_RNG, (uint8_t**)&res);
+    if (ret == WH_ERROR_OK) {
+        if (res->sz > WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ ||
+            res->sz > *inout_size) {
+            /* Server returned more than the inline cap or the caller's buffer
+             * can hold. Guard the inline cap first to avoid reading past the
+             * comm buffer on a malformed response. */
+            ret = WH_ERROR_ABORTED;
         }
-        if (ret == WH_ERROR_OK) {
-            /* Get response */
-            ret =
-                _getCryptoResponse(dataPtr, WC_ALGO_TYPE_RNG, (uint8_t**)&res);
-            if (ret == WH_ERROR_OK) {
-                /* Validate server didn't respond with more than requested */
-                if (res->sz <= chunk_size) {
-                    uint8_t* res_out = (uint8_t*)(res + 1);
-                    if (out != NULL) {
-                        memcpy(out, res_out, res->sz);
-                        out += res->sz;
-                    }
-                    size -= res->sz;
-                    WH_DEBUG_CLIENT_VERBOSE("out size:%u remaining:%u\n",
-                           (unsigned int)res->sz, (unsigned int)size);
-                    WH_DEBUG_VERBOSE_HEXDUMP("[client] res_out: \n", out - res->sz,
-                                     res->sz);
-                }
-                else {
-                    /* Server returned more than we can handle - error */
-                    ret = WH_ERROR_ABORTED;
-                }
+        else {
+            if (res->sz > 0 && out != NULL) {
+                memcpy(out, (uint8_t*)(res + 1), res->sz);
             }
+            *inout_size = res->sz;
+            WH_DEBUG_CLIENT_VERBOSE("RNG resp: size=%u\n",
+                                    (unsigned int)res->sz);
         }
     }
     return ret;
 }
 
-#ifdef WOLFHSM_CFG_DMA
-int wh_Client_RngGenerateDma(whClientContext* ctx, uint8_t* out, uint32_t size)
+int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size)
 {
-    int                             ret     = WH_ERROR_OK;
-    uint8_t*                        dataPtr = NULL;
-    whMessageCrypto_RngDmaRequest*  req     = NULL;
-    whMessageCrypto_RngDmaResponse* resp    = NULL;
-    uint16_t                        respSz  = 0;
-    uintptr_t                       outAddr = 0;
+    int            ret = WH_ERROR_OK;
+    uint32_t       remaining;
+    const uint32_t cap = (uint32_t)WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ;
 
-    if ((ctx == NULL) || (out == NULL) || (size == 0)) {
+    if (ctx == NULL || out == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Get data pointer from the context to use as request/response storage */
+    remaining = size;
+    while (ret == WH_ERROR_OK && remaining > 0) {
+        uint32_t chunk = (remaining < cap) ? remaining : cap;
+        uint32_t got   = chunk;
+
+        ret = wh_Client_RngGenerateRequest(ctx, chunk);
+        if (ret != WH_ERROR_OK) {
+            break;
+        }
+        do {
+            ret = wh_Client_RngGenerateResponse(ctx, out, &got);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret != WH_ERROR_OK) {
+            break;
+        }
+        if (got == 0) {
+            /* Server returned nothing for a non-zero request — guard against
+             * infinite loop. */
+            ret = WH_ERROR_ABORTED;
+            break;
+        }
+        out += got;
+        remaining -= got;
+    }
+    return ret;
+}
+
+#ifdef WOLFHSM_CFG_DMA
+int wh_Client_RngGenerateDmaRequest(whClientContext* ctx, uint8_t* out,
+                                    uint32_t size)
+{
+    int                            ret             = WH_ERROR_OK;
+    uint8_t*                       dataPtr         = NULL;
+    whMessageCrypto_RngDmaRequest* req             = NULL;
+    uintptr_t                      outAddr         = 0;
+    bool                           outAddrAcquired = false;
+
+    if (ctx == NULL || out == NULL || size == 0) {
+        return WH_ERROR_BADARGS;
+    }
+    /* Fail-fast on occupied transport to avoid acquiring a DMA mapping that
+     * would be leaked if SendRequest later rejects the request. */
+    if (wh_CommClient_IsRequestPending(ctx->comm) == 1) {
+        return WH_ERROR_REQUEST_PENDING;
+    }
+
     dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Setup generic header and get pointer to request data */
     req = (whMessageCrypto_RngDmaRequest*)_createCryptoRequest(
         dataPtr, WC_ALGO_TYPE_RNG, ctx->cryptoAffinity);
 
-    /* Set up output buffer address and size */
-    req->output.sz = size;
+    req->output.sz   = size;
+    req->output.addr = 0;
 
-    /* Perform address translation for output buffer (PRE operation) */
+    /* PRE address translation for the output buffer */
     ret = wh_Client_DmaProcessClientAddress(
-        ctx, (uintptr_t)out, (void**)&outAddr, req->output.sz,
+        ctx, (uintptr_t)out, (void**)&outAddr, size,
         WH_DMA_OPER_CLIENT_WRITE_PRE, (whDmaFlags){0});
     if (ret == WH_ERROR_OK) {
+        outAddrAcquired  = true;
         req->output.addr = outAddr;
     }
 
     if (ret == WH_ERROR_OK) {
-        /* Send the request to the server */
+        /* Stash for POST cleanup in the matching Response */
+        ctx->dma.asyncCtx.rng.outAddr    = outAddr;
+        ctx->dma.asyncCtx.rng.clientAddr = (uintptr_t)out;
+        ctx->dma.asyncCtx.rng.outSz      = size;
+
         ret = wh_Client_SendRequest(
             ctx, WH_MESSAGE_GROUP_CRYPTO_DMA, WC_ALGO_TYPE_RNG,
             sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req),
-            (uint8_t*)dataPtr);
+            dataPtr);
+    }
+
+    if (ret != WH_ERROR_OK && outAddrAcquired) {
+        /* Release the mapping if SendRequest failed; the Response will not run
+         * and the stash is meaningless. */
+        (void)wh_Client_DmaProcessClientAddress(
+            ctx, (uintptr_t)out, (void**)&outAddr, size,
+            WH_DMA_OPER_CLIENT_WRITE_POST, (whDmaFlags){0});
+        ctx->dma.asyncCtx.rng.outSz = 0;
+    }
+    return ret;
+}
+
+int wh_Client_RngGenerateDmaResponse(whClientContext* ctx)
+{
+    int                             ret     = WH_ERROR_OK;
+    uint8_t*                        dataPtr = NULL;
+    whMessageCrypto_RngDmaResponse* resp    = NULL;
+    uint16_t                        respSz  = 0;
+
+    if (ctx == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    ret = wh_Client_RecvResponse(ctx, NULL, NULL, &respSz, dataPtr);
+    if (ret == WH_ERROR_NOTREADY) {
+        return ret;
     }
 
     if (ret == WH_ERROR_OK) {
-        /* Wait for and receive the response */
+        ret = _getCryptoResponse(dataPtr, WC_ALGO_TYPE_RNG, (uint8_t**)&resp);
+        /* On success, server has written random bytes directly to client
+         * memory — nothing else to copy. */
+    }
+
+    /* POST DMA cleanup using stashed addresses (runs on every non-NOTREADY
+     * exit so the client buffer is safe to read regardless of error). */
+    if (ctx->dma.asyncCtx.rng.outSz > 0) {
+        uintptr_t outAddr = ctx->dma.asyncCtx.rng.outAddr;
+        (void)wh_Client_DmaProcessClientAddress(
+            ctx, ctx->dma.asyncCtx.rng.clientAddr, (void**)&outAddr,
+            ctx->dma.asyncCtx.rng.outSz, WH_DMA_OPER_CLIENT_WRITE_POST,
+            (whDmaFlags){0});
+        ctx->dma.asyncCtx.rng.outSz = 0;
+    }
+    return ret;
+}
+
+int wh_Client_RngGenerateDma(whClientContext* ctx, uint8_t* out, uint32_t size)
+{
+    int ret;
+
+    ret = wh_Client_RngGenerateDmaRequest(ctx, out, size);
+    if (ret == WH_ERROR_OK) {
         do {
-            ret = wh_Client_RecvResponse(ctx, NULL, NULL, &respSz,
-                                         (uint8_t*)dataPtr);
+            ret = wh_Client_RngGenerateDmaResponse(ctx);
         } while (ret == WH_ERROR_NOTREADY);
     }
-
-    if (ret == WH_ERROR_OK) {
-        /* Get response structure pointer, validates generic header rc */
-        ret = _getCryptoResponse(dataPtr, WC_ALGO_TYPE_RNG, (uint8_t**)&resp);
-        /* Nothing more to do on success, as server will have written random
-         * bytes directly to client memory */
-    }
-
-    /* Perform address translation cleanup (POST operation)
-     * This is called regardless of successful operation to give the callback a
-     * chance for cleanup */
-    (void)wh_Client_DmaProcessClientAddress(
-        ctx, (uintptr_t)out, (void**)&outAddr, size,
-        WH_DMA_OPER_CLIENT_WRITE_POST, (whDmaFlags){0});
-
     return ret;
 }
 #endif /* WOLFHSM_CFG_DMA */

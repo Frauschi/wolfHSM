@@ -60,11 +60,53 @@
  * requesting the maximum block size of data from the server at a time
  *
  * @param[in] ctx Pointer to the client context
- * @param[in] out Pointer to the where the bytes are to be placed.  May be NULL.
- * @param[in] size Number of bytes to generate. *
+ * @param[out] out Pointer to where the bytes are to be placed. Must not be
+ *                 NULL.
+ * @param[in] size Number of bytes to generate.
  * @return int Returns 0 on success or a negative error code on failure.
  */
 int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size);
+
+/**
+ * @brief Async request half of a non-DMA RNG generate.
+ *
+ * Serializes and sends a request for size bytes of random data. Does NOT wait
+ * for a reply. Single-shot per call: chunking large requests is the caller's
+ * responsibility. The blocking wrapper wh_Client_RngGenerate handles chunking
+ * automatically.
+ *
+ * Contract: at most one outstanding async request may be in flight per
+ * whClientContext. The caller MUST call wh_Client_RngGenerateResponse before
+ * issuing any other async Request on the same ctx.
+ *
+ * @param[in] ctx  Client context.
+ * @param[in] size Number of random bytes to request. Must be > 0 and must not
+ *                 exceed WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ.
+ * @return WH_ERROR_OK on success, WH_ERROR_BADARGS for invalid args or a size
+ *         exceeding the per-call inline capacity, or a negative error from the
+ *         transport.
+ */
+int wh_Client_RngGenerateRequest(whClientContext* ctx, uint32_t size);
+
+/**
+ * @brief Async response half of a non-DMA RNG generate.
+ *
+ * Single-shot RecvResponse; returns WH_ERROR_NOTREADY if the server has not
+ * yet replied. On success, copies up to *inout_size random bytes into out and
+ * updates *inout_size to the actual number received.
+ *
+ * @param[in]     ctx        Client context.
+ * @param[out]    out        Buffer to receive random bytes. May be NULL only if
+ *                           *inout_size is 0.
+ * @param[in,out] inout_size On entry: capacity of out (typically equals the
+ *                           size passed to wh_Client_RngGenerateRequest). On
+ *                           success: number of bytes actually written to out.
+ * @return WH_ERROR_OK on success, WH_ERROR_NOTREADY if no reply yet,
+ *         WH_ERROR_ABORTED if the server returned more bytes than the buffer
+ *         can hold, WH_ERROR_BADARGS for invalid args.
+ */
+int wh_Client_RngGenerateResponse(whClientContext* ctx, uint8_t* out,
+                                  uint32_t* inout_size);
 
 #ifdef WOLFHSM_CFG_DMA
 /**
@@ -80,6 +122,39 @@ int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size);
  * @return int Returns 0 on success or a negative error code on failure.
  */
 int wh_Client_RngGenerateDma(whClientContext* ctx, uint8_t* out, uint32_t size);
+
+/**
+ * @brief Async request half of a DMA RNG generate.
+ *
+ * Performs PRE address translation for the output buffer, sends the DMA
+ * request, and stashes the translated address for POST cleanup in the
+ * matching Response. Does NOT wait for a reply.
+ *
+ * Contract: at most one outstanding async request may be in flight per
+ * whClientContext. The caller MUST call wh_Client_RngGenerateDmaResponse
+ * before issuing any other async Request on the same ctx, and must keep out
+ * valid until the Response completes.
+ *
+ * @param[in]  ctx  Client context.
+ * @param[out] out  Client buffer that will receive the random bytes via DMA.
+ * @param[in]  size Number of random bytes to generate. Must be > 0.
+ * @return WH_ERROR_OK on success, WH_ERROR_BADARGS for invalid args, or a
+ *         negative error from the DMA layer or transport. On failure any
+ *         acquired DMA mapping is released before returning.
+ */
+int wh_Client_RngGenerateDmaRequest(whClientContext* ctx, uint8_t* out,
+                                    uint32_t size);
+
+/**
+ * @brief Async response half of a DMA RNG generate.
+ *
+ * Single-shot RecvResponse; returns WH_ERROR_NOTREADY if the server has not
+ * yet replied. The random bytes are written by the server directly to the
+ * client buffer passed to wh_Client_RngGenerateDmaRequest. POST DMA cleanup
+ * for the output buffer is performed on every non-NOTREADY return so the
+ * client buffer is safe to read regardless of error.
+ */
+int wh_Client_RngGenerateDmaResponse(whClientContext* ctx);
 #endif /* WOLFHSM_CFG_DMA */
 
 #ifdef HAVE_CURVE25519

@@ -128,6 +128,15 @@ typedef struct {
      */
 } whMessageCrypto_RngResponse;
 
+/* Maximum number of random bytes that can be returned inline (after the generic
+ * crypto response header and the RngResponse struct) in a single comm-buffer
+ * message. Async callers must chunk requests larger than this; the blocking
+ * wrapper handles chunking automatically. */
+#define WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ                    \
+    (WOLFHSM_CFG_COMM_DATA_LEN -                               \
+     (uint32_t)sizeof(whMessageCrypto_GenericResponseHeader) - \
+     (uint32_t)sizeof(whMessageCrypto_RngResponse))
+
 int wh_MessageCrypto_TranslateRngRequest(uint16_t magic,
                                          const whMessageCrypto_RngRequest* src,
                                          whMessageCrypto_RngRequest* dest);
