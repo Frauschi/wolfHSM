@@ -7671,35 +7671,19 @@ int wh_Client_MlKemImportKey(whClientContext* ctx, MlKemKey* key,
 {
     int      ret    = WH_ERROR_OK;
     whKeyId  key_id = WH_KEYID_ERASED;
-    byte*    buffer = NULL;
-    uint16_t buffer_len = 0;
-    word32   allocSz = 0;
+    byte     buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE];
+    uint16_t buffer_len = sizeof(buffer);
 
     if ((ctx == NULL) || (key == NULL) ||
         ((label_len != 0) && (label == NULL))) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Use exact key size based on level to avoid over-allocation */
-    ret = wc_MlKemKey_PrivateKeySize(key, &allocSz);
-    if (ret != 0) {
-        /* Fall back to public key size if no private key */
-        ret = wc_MlKemKey_PublicKeySize(key, &allocSz);
-    }
-    if (ret != 0 || allocSz == 0) {
-        return WH_ERROR_BADARGS;
-    }
-
-    buffer = (byte*)XMALLOC(allocSz, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-    if (buffer == NULL) {
-        return WH_ERROR_ABORTED;
-    }
-
     if (inout_keyId != NULL) {
         key_id = *inout_keyId;
     }
 
-    ret = wh_Crypto_MlKemSerializeKey(key, (uint16_t)allocSz, buffer,
+    ret = wh_Crypto_MlKemSerializeKey(key, (uint16_t)buffer_len, buffer,
                                       &buffer_len);
     WH_DEBUG_CLIENT_VERBOSE("MlKemImportKey: serialize ret:%d, len:%u\n",
                             ret, (unsigned int)buffer_len);
@@ -7712,8 +7696,7 @@ int wh_Client_MlKemImportKey(whClientContext* ctx, MlKemKey* key,
     }
     WH_DEBUG_CLIENT_VERBOSE("MlKemImportKey: ret:%d keyId:%u\n", ret, key_id);
 
-    wc_ForceZero(buffer, allocSz);
-    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    wc_ForceZero(buffer, buffer_len);
     return ret;
 }
 
@@ -7721,17 +7704,11 @@ int wh_Client_MlKemExportKey(whClientContext* ctx, whKeyId keyId, MlKemKey* key,
                              uint16_t label_len, uint8_t* label)
 {
     int      ret = WH_ERROR_OK;
-    byte*    buffer = NULL;
-    uint16_t buffer_len = WC_ML_KEM_MAX_PRIVATE_KEY_SIZE;
+    byte     buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE];
+    uint16_t buffer_len = sizeof(buffer);
 
     if ((ctx == NULL) || WH_KEYID_ISERASED(keyId) || (key == NULL)) {
         return WH_ERROR_BADARGS;
-    }
-
-    buffer = (byte*)XMALLOC(WC_ML_KEM_MAX_PRIVATE_KEY_SIZE, NULL,
-                            DYNAMIC_TYPE_TMP_BUFFER);
-    if (buffer == NULL) {
-        return WH_ERROR_ABORTED;
     }
 
     ret =
@@ -7743,8 +7720,7 @@ int wh_Client_MlKemExportKey(whClientContext* ctx, whKeyId keyId, MlKemKey* key,
     }
     WH_DEBUG_CLIENT_VERBOSE("MlKemExportKey: keyId:%x ret:%d\n", keyId, ret);
 
-    wc_ForceZero(buffer, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
-    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    wc_ForceZero(buffer, buffer_len);
     return ret;
 }
 
@@ -8110,34 +8086,19 @@ int wh_Client_MlKemImportKeyDma(whClientContext* ctx, MlKemKey* key,
 {
     int      ret = WH_ERROR_OK;
     whKeyId  key_id = WH_KEYID_ERASED;
-    byte*    buffer = NULL;
-    uint16_t buffer_len = 0;
-    word32   allocSz = 0;
+    byte     buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE];
+    uint16_t buffer_len = sizeof(buffer);
 
     if ((ctx == NULL) || (key == NULL) ||
         ((label_len != 0) && (label == NULL))) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Use exact key size based on level to avoid over-allocation */
-    ret = wc_MlKemKey_PrivateKeySize(key, &allocSz);
-    if (ret != 0) {
-        ret = wc_MlKemKey_PublicKeySize(key, &allocSz);
-    }
-    if (ret != 0 || allocSz == 0) {
-        return WH_ERROR_BADARGS;
-    }
-
-    buffer = (byte*)XMALLOC(allocSz, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-    if (buffer == NULL) {
-        return WH_ERROR_ABORTED;
-    }
-
     if (inout_keyId != NULL) {
         key_id = *inout_keyId;
     }
 
-    ret = wh_Crypto_MlKemSerializeKey(key, (uint16_t)allocSz, buffer,
+    ret = wh_Crypto_MlKemSerializeKey(key, (uint16_t)buffer_len, buffer,
                                       &buffer_len);
     WH_DEBUG_CLIENT_VERBOSE("MlKemImportKeyDma: serialize ret:%d, len:%u\n",
                             ret, (unsigned int)buffer_len);
@@ -8151,8 +8112,7 @@ int wh_Client_MlKemImportKeyDma(whClientContext* ctx, MlKemKey* key,
     WH_DEBUG_CLIENT_VERBOSE("MlKemImportKeyDma: ret:%d keyId:%u\n",
                             ret, key_id);
 
-    wc_ForceZero(buffer, allocSz);
-    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    wc_ForceZero(buffer, buffer_len);
     return ret;
 }
 
@@ -8161,19 +8121,12 @@ int wh_Client_MlKemExportKeyDma(whClientContext* ctx, whKeyId keyId,
                                 uint8_t* label)
 {
     int      ret = WH_ERROR_OK;
-    byte*    buffer = NULL;
-    uint16_t buffer_len = WC_ML_KEM_MAX_PRIVATE_KEY_SIZE;
+    byte     buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE] = {0};
+    uint16_t buffer_len = sizeof(buffer);
 
     if ((ctx == NULL) || WH_KEYID_ISERASED(keyId) || (key == NULL)) {
         return WH_ERROR_BADARGS;
     }
-
-    buffer = (byte*)XMALLOC(WC_ML_KEM_MAX_PRIVATE_KEY_SIZE, NULL,
-                            DYNAMIC_TYPE_TMP_BUFFER);
-    if (buffer == NULL) {
-        return WH_ERROR_ABORTED;
-    }
-    memset(buffer, 0, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
 
     ret = wh_Client_KeyExportDma(ctx, keyId, buffer, buffer_len, label,
                                  label_len, &buffer_len);
@@ -8185,8 +8138,7 @@ int wh_Client_MlKemExportKeyDma(whClientContext* ctx, whKeyId keyId,
     WH_DEBUG_CLIENT_VERBOSE("MlKemExportKeyDma: keyId:%x ret:%d\n",
                             keyId, ret);
 
-    wc_ForceZero(buffer, WC_ML_KEM_MAX_PRIVATE_KEY_SIZE);
-    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    wc_ForceZero(buffer, buffer_len);
     return ret;
 }
 
@@ -8196,31 +8148,20 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
 {
     int                                     ret = WH_ERROR_OK;
     whKeyId                                 key_id = WH_KEYID_ERASED;
-    byte*                                   buffer = NULL;
     uint8_t*                                dataPtr = NULL;
     whMessageCrypto_MlKemKeyGenDmaRequest*  req = NULL;
     whMessageCrypto_MlKemKeyGenDmaResponse* res = NULL;
     uintptr_t                               keyAddr = 0;
-    uint32_t                                allocSz = 0;
+
+    byte     buffer[WC_ML_KEM_MAX_PRIVATE_KEY_SIZE];
+    uint16_t buffer_len = sizeof(buffer);
 
     if ((ctx == NULL) || (key == NULL)) {
         return WH_ERROR_BADARGS;
     }
 
-    ret = wc_MlKemKey_PrivateKeySize(key, &allocSz);
-    if (ret != 0) {
-        return WH_ERROR_BADARGS;
-    }
-    else {
-        buffer = (byte*)XMALLOC(allocSz, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-        if (buffer == NULL) {
-            return WH_ERROR_ABORTED;
-        }
-    }
-
     dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
-        XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
         return WH_ERROR_BADARGS;
     }
 
@@ -8238,7 +8179,6 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
         sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
 
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
-        XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
         return WH_ERROR_BADARGS;
     }
 
@@ -8247,10 +8187,10 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
     req->flags  = flags;
     req->keyId  = key_id;
     req->access = WH_NVM_ACCESS_ANY;
-    req->key.sz = allocSz;
+    req->key.sz = buffer_len;
 
     ret = wh_Client_DmaProcessClientAddress(
-        ctx, (uintptr_t)buffer, (void**)&keyAddr, allocSz,
+        ctx, (uintptr_t)buffer, (void**)&keyAddr, buffer_len,
         WH_DMA_OPER_CLIENT_WRITE_PRE, (whDmaFlags){0});
     if (ret == WH_ERROR_OK) {
         req->key.addr = (uint64_t)(uintptr_t)keyAddr;
@@ -8276,7 +8216,7 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
     }
 
     (void)wh_Client_DmaProcessClientAddress(
-        ctx, (uintptr_t)buffer, (void**)&keyAddr, allocSz,
+        ctx, (uintptr_t)buffer, (void**)&keyAddr, buffer_len,
         WH_DMA_OPER_CLIENT_WRITE_POST, (whDmaFlags){0});
 
     if (ret == WH_ERROR_OK) {
@@ -8290,7 +8230,7 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
             if (key != NULL) {
                 wh_Client_MlKemSetKeyId(key, key_id);
                 if ((flags & WH_NVM_FLAGS_EPHEMERAL) != 0) {
-                    if (res->keySize > allocSz) {
+                    if (res->keySize > buffer_len) {
                         ret = WH_ERROR_BADARGS;
                     }
                     else {
@@ -8302,8 +8242,7 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
         }
     }
 
-    wc_ForceZero(buffer, allocSz);
-    XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    wc_ForceZero(buffer, buffer_len);
     return ret;
 }
 
