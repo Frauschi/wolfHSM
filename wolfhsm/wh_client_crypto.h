@@ -314,40 +314,411 @@ int wh_Client_EccSetKeyId(ecc_key* key, whKeyId keyId);
  */
 int wh_Client_EccGetKeyId(ecc_key* key, whKeyId* outId);
 
-/* TODO: Send key to server */
+/**
+ * @brief Imports a wolfCrypt ECC key as a DER-formatted blob into the wolfHSM
+ * server key cache.
+ *
+ * This function serializes the ecc_key struct to DER format, installs it into
+ * the server's key cache, and provides the server-allocated keyId for
+ * reference.
+ *
+ * @param[in] ctx Pointer to the wolfHSM client structure.
+ * @param[in] key Pointer to the ECC key structure.
+ * @param[in,out] inout_keyId Pointer to the key ID. Set to WH_KEYID_ERASED to
+ *                  have the server allocate a unique id.  May be NULL.
+ * @param[in] flags Value of flags to indicate server usage
+ * @param[in] label_len Length of the optional label in bytes, Valid values are
+ *              0 to WH_NVM_LABEL_LEN.
+ * @param[in] label pointer to the optional label byte array. May be NULL.
+ * @return int Returns 0 on success or a negative error code on failure.
+ */
 int wh_Client_EccImportKey(whClientContext* ctx, ecc_key* key,
         whKeyId *inout_keyId, whNvmFlags flags,
         uint16_t label_len, uint8_t* label);
-/* TODO: Recv key from server */
+
+/**
+ * @brief Exports a DER-formatted ECC key from the wolfHSM server keycache and
+ * decodes it into the wolfCrypt ECC key structure.
+ *
+ * This function exports the specified key from the wolfHSM server key cache as
+ * a DER blob and decodes it into the wolfCrypt ecc_key structure, optionally
+ * copying out the associated label as well.
+ *
+ * @param[in] ctx Pointer to the wolfHSM client structure.
+ * @param[in] keyId Server key ID to export.
+ * @param[out] key Pointer to the ECC key structure to populate.
+ * @param[in] label_len Length of the optional label in bytes, Valid values are
+ *              0 to WH_NVM_LABEL_LEN.
+ * @param[out] label pointer to the optional label byte array. May be NULL.
+ * @return int Returns 0 on success or a negative error code on failure.
+ */
 int wh_Client_EccExportKey(whClientContext* ctx, whKeyId keyId,
         ecc_key* key,
         uint16_t label_len, uint8_t* label);
 
-/* TODO: Server creates and exports a key, without caching */
+/**
+ * @brief Generate an ECC key pair on the server and export it to the client.
+ *
+ * This function requests the server to generate a new ECC key pair and export
+ * it to the client, without using any key cache or additional resources.
+ *
+ * @param[in] ctx Pointer to the client context.
+ * @param[in] size Size of the key to generate in bytes (e.g. 32 for P-256).
+ * @param[in] curveId wolfCrypt curve identifier (e.g. ECC_SECP256R1).
+ * @param[out] key Pointer to a wolfCrypt ECC key structure, which will be
+ *                 populated with the new key pair when successful.
+ * @return int Returns 0 on success or a negative error code on failure.
+ */
 int wh_Client_EccMakeExportKey(whClientContext* ctx,
         int size, int curveId, ecc_key* key);
-/* TODO: Server creates and imports the key to cache. */
+
+/**
+ * @brief Generate an ECC key pair in the server key cache.
+ *
+ * This function requests the server to generate a new ECC key pair and insert
+ * it into the server's key cache. The generated key material is not returned
+ * to the client.
+ *
+ * @param[in] ctx Pointer to the client context.
+ * @param[in] size Size of the key to generate in bytes (e.g. 32 for P-256).
+ * @param[in] curveId wolfCrypt curve identifier (e.g. ECC_SECP256R1).
+ * @param[in,out] inout_key_id Pointer to the key ID. Set to WH_KEYID_ERASED to
+ *                  have the server allocate a unique id. Must not be NULL.
+ * @param[in] flags Optional flags to be associated with the key while in the
+ *                  key cache or after being committed. Set to WH_NVM_FLAGS_NONE
+ *                  if not used.
+ * @param[in] label_len Size of the label up to WH_NVM_LABEL_LEN. Set to 0 if
+ *                      not used.
+ * @param[in] label Optional label to be associated with the key while in the
+ *                  key cache or after being committed. Set to NULL if not used.
+ * @return int Returns 0 on success or a negative error code on failure.
+ */
 int wh_Client_EccMakeCacheKey(whClientContext* ctx,
         int size, int curveId,
         whKeyId *inout_key_id, whNvmFlags flags,
         uint16_t label_len, uint8_t* label);
 
-/* TODO: Perform shared secret computation (ECDH) */
-int wh_Client_EccSharedSecret(whClientContext* ctx,
-                                ecc_key* priv_key, ecc_key* pub_key,
-                                uint8_t* out, uint16_t *out_size);
+/**
+ * @brief Compute an ECDH shared secret using a public and private ECC key.
+ *
+ * This function requests the server to compute the shared secret using the
+ * provided wolfCrypt private and public keys. Either key context may carry
+ * actual key material or refer to a server-cached key by keyId via its devCtx
+ * (associated by wh_Client_EccSetKeyId or returned from a server-side keygen).
+ * For any context that does not reference a cached keyId, the client will
+ * temporarily import its material to the server for the duration of the
+ * operation and evict it afterwards.
+ *
+ * @param[in] ctx Pointer to the client context.
+ * @param[in] priv_key Pointer to a wolfCrypt key structure that either holds
+ *                     the private key material or references a server-cached
+ *                     private key via its devCtx (keyId).
+ * @param[in] pub_key Pointer to a wolfCrypt key structure that either holds
+ *                    the public key material or references a server-cached
+ *                    public key via its devCtx (keyId).
+ * @param[out] out Buffer to receive the computed shared secret. May be NULL
+ *                 to query the required size, in which case inout_size must be
+ *                 non-NULL and the required size will be written to
+ *                 *inout_size with WH_ERROR_BUFFER_SIZE returned.
+ * @param[in,out] inout_size On input, the capacity of the out buffer in bytes
+ *                  when out is non-NULL. On output, the number of bytes
+ *                  written on success, or the required buffer size when
+ *                  WH_ERROR_BUFFER_SIZE is returned. Must not be NULL when
+ *                  out is non-NULL; may be NULL only when out is also NULL.
+ * @return int Returns 0 on success, WH_ERROR_BUFFER_SIZE if the caller's out
+ *             buffer is too small to hold the shared secret (with required
+ *             size written to *inout_size), or a negative error code on
+ *             failure.
+ */
+int wh_Client_EccSharedSecret(whClientContext* ctx, ecc_key* priv_key,
+                              ecc_key* pub_key, uint8_t* out,
+                              uint16_t* inout_size);
 
-/* TODO: Server generates signature of input hash */
+/**
+ * @brief Generate an ECDSA signature of the provided hash on the server.
+ *
+ * This function requests the server to sign the provided hash using the
+ * specified ECC key. The key context may either carry actual key material or
+ * refer to a server-cached key by keyId via its devCtx (associated by
+ * wh_Client_EccSetKeyId or returned from a server-side keygen). If the key
+ * does not reference a cached keyId, the client will temporarily import its
+ * material to the server for the duration of the operation and evict it
+ * afterwards.
+ *
+ * @param[in] ctx Pointer to the client context.
+ * @param[in] key Pointer to a wolfCrypt ECC key structure that either holds
+ *                the private key material or references a server-cached
+ *                private key via its devCtx (keyId).
+ * @param[in] hash Hash data to sign. May be NULL only if hash_len is 0.
+ * @param[in] hash_len Length of hash in bytes.
+ * @param[out] sig Buffer to receive the generated signature. May be NULL to
+ *                 query the required size, in which case inout_sig_len must be
+ *                 non-NULL and the required size will be written to
+ *                 *inout_sig_len with WH_ERROR_BUFFER_SIZE returned.
+ * @param[in,out] inout_sig_len On input, the capacity of the sig buffer in
+ *                  bytes when sig is non-NULL. On output, the number of
+ *                  bytes written on success, or the required buffer size
+ *                  when WH_ERROR_BUFFER_SIZE is returned. Must not be NULL
+ *                  when sig is non-NULL; may be NULL only when sig is also
+ *                  NULL.
+ * @return int Returns 0 on success, WH_ERROR_BUFFER_SIZE if the caller's sig
+ *             buffer is too small to hold the signature (with required size
+ *             written to *inout_sig_len), or a negative error code on
+ *             failure.
+ */
 int wh_Client_EccSign(whClientContext* ctx,
         ecc_key* key,
         const uint8_t* hash, uint16_t hash_len,
         uint8_t* sig, uint16_t *inout_sig_len);
 
-/* TODO: Server verifies the signature of the provided hash */
+/**
+ * @brief Verify an ECDSA signature of the provided hash on the server.
+ *
+ * This function requests the server to verify the provided signature against
+ * the provided hash using the specified ECC key. The key context may either
+ * carry actual key material or refer to a server-cached key by keyId via its
+ * devCtx (associated by wh_Client_EccSetKeyId or returned from a server-side
+ * keygen). If the key does not reference a cached keyId, the client will
+ * temporarily import its material to the server for the duration of the
+ * operation and evict it afterwards. If the supplied key is private-only, the
+ * server will derive the public key as needed.
+ *
+ * @param[in] ctx Pointer to the client context.
+ * @param[in] key Pointer to a wolfCrypt ECC key structure that either holds
+ *                the public key material or references a server-cached public
+ *                key via its devCtx (keyId).
+ * @param[in] sig Signature bytes.
+ * @param[in] sig_len Length of sig in bytes.
+ * @param[in] hash Hash bytes that were signed.
+ * @param[in] hash_len Length of hash in bytes.
+ * @param[out] out_res Pointer to receive the verification result. Set to 1 if
+ *                     the signature is valid, 0 otherwise. Must not be NULL.
+ * @return int Returns 0 on success or a negative error code on failure.
+ */
 int wh_Client_EccVerify(whClientContext* ctx, ecc_key* key,
         const uint8_t* sig, uint16_t sig_len,
         const uint8_t* hash, uint16_t hash_len,
         int *out_res);
+
+/**
+ * @brief Async request half of an ECC sign operation.
+ *
+ * Serializes and sends a sign request for the hash using the server-cached
+ * private key identified by keyId. Does NOT wait for a reply. The key must
+ * already be cached on the server; auto-import is only available via the
+ * blocking wrapper wh_Client_EccSign.
+ *
+ * Contract: at most one outstanding async request may be in flight per
+ * whClientContext. The caller MUST call wh_Client_EccSignResponse before
+ * issuing any other async Request on the same ctx.
+ *
+ * @param[in] ctx      Client context.
+ * @param[in] keyId    Key ID of a cached ECC private key. Must not be erased.
+ * @param[in] hash     Hash data to sign (may be NULL only if hash_len == 0).
+ * @param[in] hash_len Length of hash in bytes.
+ * @return WH_ERROR_OK on success, WH_ERROR_BADARGS for invalid args or erased
+ *         keyId, or a negative error from the transport.
+ */
+int wh_Client_EccSignRequest(whClientContext* ctx, whKeyId keyId,
+                             const uint8_t* hash, uint16_t hash_len);
+
+/**
+ * @brief Async response half of an ECC sign operation.
+ *
+ * Single-shot RecvResponse; returns WH_ERROR_NOTREADY if the server has not
+ * yet replied. On success, copies the signature into sig and updates
+ * *inout_sig_len. If the server-reported signature is larger than the
+ * caller's *inout_sig_len capacity, returns WH_ERROR_BUFFER_SIZE with the
+ * required size written to *inout_sig_len.
+ *
+ * @param[in] ctx Client context.
+ * @param[out] sig Buffer to receive the generated signature. May be NULL to
+ *                 query the required size, in which case inout_sig_len must be
+ *                 non-NULL and the required size will be written to
+ *                 *inout_sig_len with WH_ERROR_BUFFER_SIZE returned.
+ * @param[in,out] inout_sig_len On input, the capacity of the sig buffer in
+ *                  bytes when sig is non-NULL. On output, the number of
+ *                  bytes written on success, or the required buffer size
+ *                  when WH_ERROR_BUFFER_SIZE is returned. Must not be NULL
+ *                  when sig is non-NULL; may be NULL only when sig is also
+ *                  NULL.
+ * @return WH_ERROR_OK on success, WH_ERROR_NOTREADY if no reply yet,
+ *         WH_ERROR_BUFFER_SIZE if sig is too small (required size written to
+ *         *inout_sig_len), WH_ERROR_BADARGS for invalid args, or a negative
+ *         error code from the transport.
+ */
+int wh_Client_EccSignResponse(whClientContext* ctx, uint8_t* sig,
+                              uint16_t* inout_sig_len);
+
+/**
+ * @brief Async request half of an ECC verify operation.
+ *
+ * Serializes and sends a verify request for (sig, hash) using the server-cached
+ * public key identified by keyId. Does NOT wait for a reply. The key must
+ * already be cached on the server; auto-import is only available via the
+ * blocking wrapper wh_Client_EccVerify.
+ *
+ * Note: the async API does not support the EXPORTPUB convenience (deriving
+ * a public key from a private-only key) — that stays a blocking-wrapper
+ * convenience.
+ *
+ * @param[in] ctx      Client context.
+ * @param[in] keyId    Key ID of a cached ECC public key. Must not be erased.
+ * @param[in] sig      Signature bytes.
+ * @param[in] sig_len  Length of sig.
+ * @param[in] hash     Hash bytes.
+ * @param[in] hash_len Length of hash.
+ * @return WH_ERROR_OK on success, WH_ERROR_BADARGS for invalid args or erased
+ *         keyId, or a negative error from the transport.
+ */
+int wh_Client_EccVerifyRequest(whClientContext* ctx, whKeyId keyId,
+                               const uint8_t* sig, uint16_t sig_len,
+                               const uint8_t* hash, uint16_t hash_len);
+
+/**
+ * @brief Async response half of an ECC verify operation.
+ *
+ * Single-shot RecvResponse; returns WH_ERROR_NOTREADY if the server has not
+ * yet replied. On success, writes the verify result (1 = valid, 0 = invalid)
+ * to *out_res.
+ *
+ * @param[in] ctx     Client context.
+ * @param[in,out] opt_key Optional ecc_key whose public half should be updated
+ *                  from the server-supplied DER bytes when the matching
+ *                  Request had EXPORTPUB set. Pass NULL when no key update
+ *                  is desired. The async Request half does not currently
+ *                  expose EXPORTPUB, so this parameter is primarily for the
+ *                  blocking wrapper wh_Client_EccVerify.
+ * @param[out] out_res 1 if the signature is valid, 0 otherwise.
+ */
+int wh_Client_EccVerifyResponse(whClientContext* ctx, ecc_key* opt_key,
+                                int* out_res);
+
+/**
+ * @brief Async request half of an ECDH shared-secret operation.
+ *
+ * Serializes and sends a shared-secret request using two server-cached keys
+ * (private and public). Does NOT wait for a reply. Both keys must already be
+ * cached on the server; auto-import is only available via the blocking
+ * wrapper wh_Client_EccSharedSecret.
+ *
+ * @param[in] ctx        Client context.
+ * @param[in] prv_key_id Key ID of the cached private key. Must not be erased.
+ * @param[in] pub_key_id Key ID of the cached public key. Must not be erased.
+ * @return WH_ERROR_OK on success, WH_ERROR_BADARGS for invalid args or erased
+ *         keyIds, or a negative error from the transport.
+ */
+int wh_Client_EccSharedSecretRequest(whClientContext* ctx, whKeyId prv_key_id,
+                                     whKeyId pub_key_id);
+
+/**
+ * @brief Async response half of an ECDH shared-secret operation.
+ *
+ * Single-shot RecvResponse; returns WH_ERROR_NOTREADY if the server has not
+ * yet replied. On success, copies the shared secret into out and updates
+ * *inout_size. *inout_size is in/out: when out is non-NULL, callers must
+ * initialize it to the capacity of the out buffer. If the server-reported
+ * secret is larger than the caller's capacity, returns WH_ERROR_BUFFER_SIZE
+ * with the required size written to *inout_size — the partial buffer is NOT
+ * written, since truncated key material would be unsafe to use.
+ *
+ * @param[in] ctx Client context.
+ * @param[out] out Buffer to receive the computed shared secret. May be NULL
+ *                 to query the required size, in which case inout_size must be
+ *                 non-NULL and the required size will be written to
+ *                 *inout_size with WH_ERROR_BUFFER_SIZE returned.
+ * @param[in,out] inout_size On input, the capacity of the out buffer in bytes
+ *                  when out is non-NULL. On output, the number of bytes
+ *                  written on success, or the required buffer size when
+ *                  WH_ERROR_BUFFER_SIZE is returned. Must not be NULL when
+ *                  out is non-NULL; may be NULL only when out is also NULL.
+ * @return WH_ERROR_OK on success, WH_ERROR_NOTREADY if no reply yet,
+ *         WH_ERROR_BUFFER_SIZE if out is too small (required size written to
+ *         *inout_size), WH_ERROR_BADARGS for invalid args, or a negative
+ *         error code from the transport.
+ */
+int wh_Client_EccSharedSecretResponse(whClientContext* ctx, uint8_t* out,
+                                      uint16_t* inout_size);
+
+/**
+ * @brief Async request half of an ECC server-side keygen that caches the new
+ * key in the server.
+ *
+ * Serializes and sends a keygen request that asks the server to generate a new
+ * ECC key pair on the specified curve and insert it into the server key cache.
+ * Does NOT wait for a reply.
+ *
+ * Contract: at most one outstanding async request may be in flight per
+ * whClientContext. The caller MUST call wh_Client_EccMakeCacheKeyResponse
+ * before issuing any other async Request on the same ctx.
+ *
+ * @param[in] ctx       Client context.
+ * @param[in] size      Size of the key to generate in bytes (e.g. 32 for
+ * P-256).
+ * @param[in] curveId   wolfCrypt curve identifier (e.g. ECC_SECP256R1).
+ * @param[in] key_id    Suggested key ID. Pass WH_KEYID_ERASED to have the
+ *                      server allocate one.
+ * @param[in] flags     Optional NVM flags. Must NOT include
+ *                      WH_NVM_FLAGS_EPHEMERAL — use the MakeExportKey async
+ *                      pair for ephemeral (export) keygen instead.
+ * @param[in] label_len Size of the label up to WH_NVM_LABEL_LEN. Set to 0 if
+ *                      not used.
+ * @param[in] label     Optional label byte array. May be NULL when label_len
+ *                      is 0.
+ * @return WH_ERROR_OK on success, WH_ERROR_BADARGS for invalid args (including
+ *         EPHEMERAL flag), or a negative error from the transport.
+ */
+int wh_Client_EccMakeCacheKeyRequest(whClientContext* ctx, int size,
+                                     int curveId, whKeyId key_id,
+                                     whNvmFlags flags, uint16_t label_len,
+                                     uint8_t* label);
+
+/**
+ * @brief Async response half of an ECC server-side keygen that caches the new
+ * key in the server.
+ *
+ * Single-shot RecvResponse; returns WH_ERROR_NOTREADY if the server has not
+ * yet replied. On success, writes the server-allocated key ID into
+ * *out_key_id.
+ *
+ * @param[in] ctx          Client context.
+ * @param[out] out_key_id  Pointer to receive the assigned key ID. Must not be
+ *                         NULL.
+ */
+int wh_Client_EccMakeCacheKeyResponse(whClientContext* ctx,
+                                      whKeyId*         out_key_id);
+
+/**
+ * @brief Async request half of an ECC server-side keygen that exports the new
+ * key back to the client.
+ *
+ * Serializes and sends an ephemeral keygen request that asks the server to
+ * generate a new ECC key pair on the specified curve and return its DER
+ * encoding to the client (the server does not retain the key). Does NOT wait
+ * for a reply.
+ *
+ * @param[in] ctx     Client context.
+ * @param[in] size    Size of the key to generate in bytes.
+ * @param[in] curveId wolfCrypt curve identifier.
+ * @return WH_ERROR_OK on success, WH_ERROR_BADARGS for invalid args, or a
+ *         negative error from the transport.
+ */
+int wh_Client_EccMakeExportKeyRequest(whClientContext* ctx, int size,
+                                      int curveId);
+
+/**
+ * @brief Async response half of an ECC server-side keygen that exports the new
+ * key back to the client.
+ *
+ * Single-shot RecvResponse; returns WH_ERROR_NOTREADY if the server has not
+ * yet replied. On success, deserializes the DER blob returned by the server
+ * into the supplied wolfCrypt ecc_key.
+ *
+ * @param[in]  ctx Client context.
+ * @param[out] key Pointer to a wolfCrypt ECC key structure that will be
+ *                 populated with the new key pair. Must not be NULL.
+ */
+int wh_Client_EccMakeExportKeyResponse(whClientContext* ctx, ecc_key* key);
 
 #endif /* HAVE_ECC */
 
