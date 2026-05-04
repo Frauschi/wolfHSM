@@ -26,8 +26,14 @@ INC =	-I$(PROJECT_DIR) \
 # POSIX requires C source be defined before any header
 DEF += -D_POSIX_C_SOURCE=200809L
 
-# Library configuration defines for user-supplied settings
-DEF += -DWOLFSSL_USER_SETTINGS -DWOLFHSM_CFG
+# Library configuration defines for user-supplied settings.
+# When linking against an installed wolfSSL (WOLFSSL_LIB=1), skip
+# WOLFSSL_USER_SETTINGS so the installed library's compiled-in options.h
+# is used instead of the in-tree user_settings.h.
+DEF += -DWOLFHSM_CFG
+ifneq ($(WOLFSSL_LIB),1)
+DEF += -DWOLFSSL_USER_SETTINGS
+endif
 
 # Ensure this build uses POSIX test features
 DEF += -DWOLFHSM_CFG_TEST_POSIX
@@ -182,11 +188,23 @@ endif
 SRC_ASM +=
 
 ifneq ($(NOCRYPTO),1)
+ifeq ($(WOLFSSL_LIB),1)
+# Link against an installed wolfSSL shared/static library instead of
+# compiling wolfSSL/wolfCrypt sources. Set WOLFSSL_LIBDIR for non-default
+# install paths. NO_INLINE keeps wolfSSL's headers C90-clean (the
+# in-tree user_settings.h normally provides this).
+LIBS += -lwolfssl
+DEF += -DNO_INLINE
+ifneq ($(WOLFSSL_LIBDIR),)
+LDFLAGS += -L$(WOLFSSL_LIBDIR)
+endif
+else
 # wolfCrypt source files
 SRC_C +=  $(wildcard $(WOLFSSL_DIR)/wolfcrypt/src/*.c)
 
 # wolfSSL source files
 SRC_C +=  $(wildcard $(WOLFSSL_DIR)/src/*.c)
+endif
 
 ifeq ($(TESTWOLFCRYPT),1)
 

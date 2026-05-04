@@ -1609,7 +1609,7 @@ int wh_DemoClient_CryptoCmacKdfCache(whClientContext* clientContext)
     /* Example: evict the key from cache once we are done with it */
     ret = wh_Client_KeyEvict(clientContext, keyId);
     if (ret != 0) {
-        WOLFHSM_CFG_PRINTF("Failed to wh_Client_KeyEvict %d\n", evictRet);
+        WOLFHSM_CFG_PRINTF("Failed to wh_Client_KeyEvict %d\n", ret);
     }
 
     return ret;

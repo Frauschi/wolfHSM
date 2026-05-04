@@ -25,6 +25,8 @@
 #ifndef WOLFHSM_CFG_NO_CRYPTO
 /* included to print out the version of wolfSSL linked with */
 #include "wolfssl/version.h"
+#include "wolfssl/wolfcrypt/cryptocb.h"
+#include "wolfssl/wolfcrypt/error-crypt.h"
 #endif
 
 #include "wh_posix_cfg.h"
