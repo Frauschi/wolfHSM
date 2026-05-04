@@ -43,6 +43,24 @@
 #include "wolfssl/wolfcrypt/asn.h"
 
 
+/* Replicates GetSequence, which is WOLFSSL_LOCAL. */
+static int DerNextSequence(const uint8_t* input, uint32_t maxIdx,
+                           word32* inOutIdx, int* len)
+{
+    byte tag = 0;
+    int  rc;
+
+    rc = GetASNTag(input, inOutIdx, &tag, maxIdx);
+    if (rc < 0) {
+        return rc;
+    }
+    if (tag != (ASN_SEQUENCE | ASN_CONSTRUCTED)) {
+        return ASN_PARSE_E;
+    }
+    return GetLength(input, inOutIdx, len, maxIdx);
+}
+
+
 static int _verifyChainAgainstCmStore(whServerContext*      server,
                                       WOLFSSL_CERT_MANAGER* cm,
                                       const uint8_t* chain, uint32_t chain_len,
@@ -66,7 +84,7 @@ static int _verifyChainAgainstCmStore(whServerContext*      server,
         idx = 0;
 
         /* Get the length of the current certificate */
-        rc = GetSequence(cert_ptr, &idx, &cert_len, remaining_len);
+        rc = DerNextSequence(cert_ptr, remaining_len, &idx, &cert_len);
         if (rc < 0) {
             return rc;
         }
