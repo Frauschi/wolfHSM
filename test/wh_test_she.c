@@ -319,6 +319,92 @@ int whTest_SheClientConfig(whClientConfig* config)
         goto exit;
     }
     WH_TEST_PRINT("SHE LOAD KEY SUCCESS\n");
+
+    /* _LoadKey UID handling: a non-matching UID must be rejected, an
+     * all-zero UID must be rejected unless the stored target key has
+     * WH_SHE_FLAG_WILDCARD set. Use wh_She_GenerateLoadableKey with the
+     * authKey bytes so M3 is valid and the server reaches the UID
+     * check instead of failing earlier on CMAC verification. */
+    {
+        uint8_t badUid[WH_SHE_UID_SZ];
+        uint8_t zeroUid[WH_SHE_UID_SZ] = {0};
+        const uint32_t SHE_WILDCARD_KEY_ID = 5;
+
+        memset(badUid, 0xAA, sizeof(badUid));
+
+        /* Wrong UID targeting an existing key slot. Server must reject
+         * with WH_SHE_ERC_KEY_UPDATE_ERROR. */
+        if ((ret = wh_She_GenerateLoadableKey(SHE_TEST_VECTOR_KEY_ID,
+                WH_SHE_MASTER_ECU_KEY_ID, 2, 0, badUid, vectorRawKey,
+                vectorMasterEcuKey, messageOne, messageTwo,
+                messageThree, messageFour, messageFive)) != 0) {
+            WH_ERROR_PRINT("Failed to generate bad-UID M1/M2/M3 %d\n",
+                           ret);
+            goto exit;
+        }
+        ret = wh_Client_SheLoadKey(client, messageOne, messageTwo,
+                messageThree, outMessageFour, outMessageFive);
+        if (ret != WH_SHE_ERC_KEY_UPDATE_ERROR) {
+            WH_ERROR_PRINT("SHE LOAD KEY bad UID: expected "
+                           "KEY_UPDATE_ERROR, got %d\n", ret);
+            ret = WH_ERROR_ABORTED;
+            goto exit;
+        }
+
+        /* Zero UID targeting an unused slot (stored flags == 0, so
+         * WH_SHE_FLAG_WILDCARD is clear). Server must reject. */
+        if ((ret = wh_She_GenerateLoadableKey(SHE_WILDCARD_KEY_ID,
+                WH_SHE_MASTER_ECU_KEY_ID, 1, 0, zeroUid, vectorRawKey,
+                vectorMasterEcuKey, messageOne, messageTwo,
+                messageThree, messageFour, messageFive)) != 0) {
+            WH_ERROR_PRINT("Failed to generate zero-UID no-wildcard "
+                           "M1/M2/M3 %d\n", ret);
+            goto exit;
+        }
+        ret = wh_Client_SheLoadKey(client, messageOne, messageTwo,
+                messageThree, outMessageFour, outMessageFive);
+        if (ret != WH_SHE_ERC_KEY_UPDATE_ERROR) {
+            WH_ERROR_PRINT("SHE LOAD KEY zero UID without wildcard: "
+                           "expected KEY_UPDATE_ERROR, got %d\n", ret);
+            ret = WH_ERROR_ABORTED;
+            goto exit;
+        }
+
+        /* Preload the target slot with WH_SHE_FLAG_WILDCARD and count
+         * 0 via ShePreProgramKey, which writes the meta label directly
+         * (wh_She_GenerateLoadableKey cannot encode flags > 4 bits due
+         * to the M2 layout overlap between flags and count). Then
+         * re-load the slot with an all-zero UID; the server must
+         * accept it because the stored flags contain WILDCARD. */
+        if ((ret = wh_Client_ShePreProgramKey(client,
+                SHE_WILDCARD_KEY_ID, WH_SHE_FLAG_WILDCARD, vectorRawKey,
+                sizeof(vectorRawKey))) != 0) {
+            WH_ERROR_PRINT("Failed to preload wildcard key %d\n", ret);
+            goto exit;
+        }
+        if ((ret = wh_She_GenerateLoadableKey(SHE_WILDCARD_KEY_ID,
+                WH_SHE_MASTER_ECU_KEY_ID, 1, 0, zeroUid, vectorRawKey,
+                vectorMasterEcuKey, messageOne, messageTwo,
+                messageThree, messageFour, messageFive)) != 0) {
+            WH_ERROR_PRINT("Failed to generate zero-UID wildcard "
+                           "M1/M2/M3 %d\n", ret);
+            goto exit;
+        }
+        if ((ret = wh_Client_SheLoadKey(client, messageOne, messageTwo,
+                messageThree, outMessageFour, outMessageFive)) != 0) {
+            WH_ERROR_PRINT("SHE LOAD KEY zero UID with wildcard: "
+                           "expected success, got %d\n", ret);
+            goto exit;
+        }
+
+        if ((ret = _destroySheKey(client, SHE_WILDCARD_KEY_ID)) != 0) {
+            WH_ERROR_PRINT("Failed to _destroySheKey wildcard slot, "
+                           "ret=%d\n", ret);
+            goto exit;
+        }
+        WH_TEST_PRINT("SHE LOAD KEY UID checks SUCCESS\n");
+    }
+
     if ((ret = wh_Client_SheInitRnd(client)) != 0) {
         WH_ERROR_PRINT("Failed to wh_Client_SheInitRnd %d\n", ret);
         goto exit;
