@@ -143,6 +143,7 @@ static int whTest_CryptoRng(whClientContext* ctx, int devId, WC_RNG* rng)
     if (ret != 0) {
         WH_ERROR_PRINT("Failed to wc_InitRng_ex %d\n", ret);
     } else {
+        int freeRet;
         ret = wc_RNG_GenerateBlock(rng, lil, sizeof(lil));
         if (ret != 0) {
             WH_ERROR_PRINT("Failed to wc_RNG_GenerateBlock %d\n", ret);
@@ -155,10 +156,22 @@ static int whTest_CryptoRng(whClientContext* ctx, int devId, WC_RNG* rng)
                 if (ret != 0) {
                     WH_ERROR_PRINT("Failed to wc_RNG_GenerateBlock %d\n", ret);
                 }
+                else if (memcmp(lil, med, sizeof(lil)) == 0) {
+                    /* The prefixes of two successive independent RNG calls
+                     * must not match. A collision here indicates a stuck RNG */
+                    WH_ERROR_PRINT("RNG: successive calls produced identical "
+                                   "prefix\n");
+                    ret = -1;
+                }
             }
-            ret = wc_FreeRng(rng);
-            if (ret != 0) {
-                WH_ERROR_PRINT("Failed to wc_FreeRng %d\n", ret);
+        }
+        /* Always free the RNG if InitRng succeeded, regardless of which (if
+         * any) GenerateBlock call failed. */
+        freeRet = wc_FreeRng(rng);
+        if (freeRet != 0) {
+            WH_ERROR_PRINT("Failed to wc_FreeRng %d\n", freeRet);
+            if (ret == 0) {
+                ret = freeRet;
             }
         }
     }
@@ -167,6 +180,265 @@ static int whTest_CryptoRng(whClientContext* ctx, int devId, WC_RNG* rng)
     }
     return ret;
 }
+
+/* Returns 0 if buf appears to contain non-trivial data (not all zero), -1 on
+ * the all-zero case which would suggest the response was never written. */
+static int whTest_RngBufNonZero(const uint8_t* buf, uint32_t len)
+{
+    uint32_t i;
+    for (i = 0; i < len; i++) {
+        if (buf[i] != 0) {
+            return 0;
+        }
+    }
+    return -1;
+}
+
+/* Direct exercise of the new async non-DMA RNG primitives. */
+static int whTest_CryptoRngAsync(whClientContext* ctx)
+{
+    int      ret = WH_ERROR_OK;
+    uint8_t  small[64];
+    uint8_t  big[WOLFHSM_CFG_COMM_DATA_LEN * 2];
+    uint32_t got;
+
+    /* Case A: small Request -> poll Response */
+    if (ret == 0) {
+        memset(small, 0, sizeof(small));
+        ret = wh_Client_RngGenerateRequest(ctx, sizeof(small));
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("Async RNG: Request(small) failed %d\n", ret);
+        }
+    }
+    if (ret == 0) {
+        got = sizeof(small);
+        do {
+            ret = wh_Client_RngGenerateResponse(ctx, small, &got);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("Async RNG: Response(small) failed %d\n", ret);
+        }
+        else if (got != sizeof(small)) {
+            WH_ERROR_PRINT("Async RNG: short read got=%u want=%u\n",
+                           (unsigned)got, (unsigned)sizeof(small));
+            ret = -1;
+        }
+        else if (whTest_RngBufNonZero(small, sizeof(small)) != 0) {
+            WH_ERROR_PRINT("Async RNG: small buffer all zeros\n");
+            ret = -1;
+        }
+    }
+
+    /* Case B: max-inline-size Request -> Response in a single round trip */
+    if (ret == 0) {
+        uint32_t cap = (uint32_t)WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ;
+        memset(big, 0, cap);
+        ret = wh_Client_RngGenerateRequest(ctx, cap);
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("Async RNG: Request(max) failed %d\n", ret);
+        }
+        if (ret == 0) {
+            got = cap;
+            do {
+                ret = wh_Client_RngGenerateResponse(ctx, big, &got);
+            } while (ret == WH_ERROR_NOTREADY);
+            if (ret == 0 && got != cap) {
+                WH_ERROR_PRINT("Async RNG: max read short got=%u want=%u\n",
+                               (unsigned)got, (unsigned)cap);
+                ret = -1;
+            }
+            else if (ret == 0 && whTest_RngBufNonZero(big, cap) != 0) {
+                WH_ERROR_PRINT("Async RNG: max buffer all zeros\n");
+                ret = -1;
+            }
+        }
+    }
+
+    /* Case C: caller-driven chunking to fill a buffer larger than the per-call
+     * inline capacity. */
+    if (ret == 0) {
+        uint32_t cap      = (uint32_t)WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ;
+        uint32_t total    = (uint32_t)sizeof(big);
+        uint32_t consumed = 0;
+
+        memset(big, 0, total);
+        while (ret == 0 && consumed < total) {
+            uint32_t want = total - consumed;
+            if (want > cap) {
+                want = cap;
+            }
+            ret = wh_Client_RngGenerateRequest(ctx, want);
+            if (ret == 0) {
+                got = want;
+                do {
+                    ret = wh_Client_RngGenerateResponse(ctx, big + consumed,
+                                                        &got);
+                } while (ret == WH_ERROR_NOTREADY);
+            }
+            if (ret == 0) {
+                if (got == 0 || got > want) {
+                    WH_ERROR_PRINT(
+                        "Async RNG: bad chunk reply got=%u want=%u\n",
+                        (unsigned)got, (unsigned)want);
+                    ret = -1;
+                }
+                else {
+                    consumed += got;
+                }
+            }
+        }
+        if (ret == 0 && whTest_RngBufNonZero(big, total) != 0) {
+            WH_ERROR_PRINT("Async RNG: chunked buffer all zeros\n");
+            ret = -1;
+        }
+    }
+
+    /* Case D: oversize request must be rejected without sending. */
+    if (ret == 0) {
+        int rc = wh_Client_RngGenerateRequest(
+            ctx, (uint32_t)WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ + 1u);
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "Async RNG: oversize Request returned %d (want BADARGS)\n", rc);
+            ret = -1;
+        }
+    }
+
+    /* Case E: zero-size request must be rejected. */
+    if (ret == 0) {
+        int rc = wh_Client_RngGenerateRequest(ctx, 0);
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "Async RNG: zero-size Request returned %d (want BADARGS)\n",
+                rc);
+            ret = -1;
+        }
+    }
+
+    /* Case F: NULL ctx rejection on both halves. */
+    if (ret == 0) {
+        int rc = wh_Client_RngGenerateRequest(NULL, 16);
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "Async RNG: NULL ctx Request returned %d (want BADARGS)\n", rc);
+            ret = -1;
+        }
+    }
+    if (ret == 0) {
+        got    = 16;
+        int rc = wh_Client_RngGenerateResponse(NULL, small, &got);
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "Async RNG: NULL ctx Response returned %d (want BADARGS)\n",
+                rc);
+            ret = -1;
+        }
+    }
+
+    /* Case G: NULL inout_size rejection. */
+    if (ret == 0) {
+        int rc = wh_Client_RngGenerateResponse(ctx, small, NULL);
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT("Async RNG: NULL inout_size Response returned %d "
+                           "(want BADARGS)\n",
+                           rc);
+            ret = -1;
+        }
+    }
+
+    if (ret == 0) {
+        WH_TEST_PRINT("RNG ASYNC SUCCESS\n");
+    }
+    return ret;
+}
+
+#ifdef WOLFHSM_CFG_DMA
+/* Direct exercise of the new async DMA RNG primitives. */
+static int whTest_CryptoRngDmaAsync(whClientContext* ctx)
+{
+    int ret = WH_ERROR_OK;
+    /* DMA bypasses the comm buffer so we can request more than COMM_DATA_LEN
+     * in a single round trip. */
+    uint8_t big[WOLFHSM_CFG_COMM_DATA_LEN * 2];
+
+    /* Case A: basic DMA Request -> Response */
+    if (ret == 0) {
+        memset(big, 0, sizeof(big));
+        ret = wh_Client_RngGenerateDmaRequest(ctx, big, sizeof(big));
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("Async RNG DMA: Request failed %d\n", ret);
+        }
+    }
+    if (ret == 0) {
+        do {
+            ret = wh_Client_RngGenerateDmaResponse(ctx);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("Async RNG DMA: Response failed %d\n", ret);
+        }
+        else if (whTest_RngBufNonZero(big, sizeof(big)) != 0) {
+            WH_ERROR_PRINT("Async RNG DMA: buffer all zeros\n");
+            ret = -1;
+        }
+    }
+
+    /* Case B: small DMA request still works (no chunking semantics). */
+    if (ret == 0) {
+        uint8_t small[32];
+        memset(small, 0, sizeof(small));
+        ret = wh_Client_RngGenerateDmaRequest(ctx, small, sizeof(small));
+        if (ret == 0) {
+            do {
+                ret = wh_Client_RngGenerateDmaResponse(ctx);
+            } while (ret == WH_ERROR_NOTREADY);
+        }
+        if (ret == 0 && whTest_RngBufNonZero(small, sizeof(small)) != 0) {
+            WH_ERROR_PRINT("Async RNG DMA: small buffer all zeros\n");
+            ret = -1;
+        }
+    }
+
+    /* Case C: input validation. */
+    if (ret == 0) {
+        int rc = wh_Client_RngGenerateDmaRequest(NULL, big, sizeof(big));
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "Async RNG DMA: NULL ctx returned %d (want BADARGS)\n", rc);
+            ret = -1;
+        }
+    }
+    if (ret == 0) {
+        int rc = wh_Client_RngGenerateDmaRequest(ctx, NULL, sizeof(big));
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "Async RNG DMA: NULL out returned %d (want BADARGS)\n", rc);
+            ret = -1;
+        }
+    }
+    if (ret == 0) {
+        int rc = wh_Client_RngGenerateDmaRequest(ctx, big, 0);
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "Async RNG DMA: zero size returned %d (want BADARGS)\n", rc);
+            ret = -1;
+        }
+    }
+    if (ret == 0) {
+        int rc = wh_Client_RngGenerateDmaResponse(NULL);
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "Async RNG DMA: Response NULL ctx returned %d (want BADARGS)\n",
+                rc);
+            ret = -1;
+        }
+    }
+
+    if (ret == 0) {
+        WH_TEST_PRINT("RNG DMA ASYNC SUCCESS\n");
+    }
+    return ret;
+}
+#endif /* WOLFHSM_CFG_DMA */
 
 #ifndef NO_RSA
 static int whTest_CryptoRsa(whClientContext* ctx, int devId, WC_RNG* rng)
@@ -1263,6 +1535,902 @@ static int whTest_CryptoEccCrossVerify(whClientContext* ctx, WC_RNG* rng)
         WH_TEST_PRINT("ECDSA cross-verification SUCCESS\n");
     }
 
+    return ret;
+}
+
+/**
+ * Test the async Request/Response API for ECC sign and verify.
+ *
+ * For each curve:
+ * 1. Generate a HSM ECC key (server-cached with an assigned keyId).
+ * 2. Call wh_Client_EccSignRequest + poll wh_Client_EccSignResponse; verify
+ *    the resulting signature in software.
+ * 3. Import the public key as a separate cache slot; call
+ *    wh_Client_EccVerifyRequest + poll wh_Client_EccVerifyResponse; assert
+ *    res == 1.
+ * 4. Assert that *Request() with an erased keyId returns WH_ERROR_BADARGS.
+ */
+static int whTest_CryptoEccSignVerifyAsync_OneCurve(whClientContext* ctx,
+                                                    WC_RNG* rng, int keySize,
+                                                    int         curveId,
+                                                    const char* name)
+{
+    ecc_key  hsmKey[1]                   = {0};
+    ecc_key  swKey[1]                    = {0};
+    uint8_t  hash[WH_TEST_ECC_HASH_SIZE] = {0};
+    uint8_t  sig[ECC_MAX_SIG_SIZE]       = {0};
+    uint8_t  pubX[ECC_MAXSIZE]           = {0};
+    uint8_t  pubY[ECC_MAXSIZE]           = {0};
+    word32   pubXLen                     = 0;
+    word32   pubYLen                     = 0;
+    uint16_t sigLen                      = 0;
+    int      res                         = 0;
+    whKeyId  signKeyId                   = WH_KEYID_ERASED;
+    whKeyId  verifyKeyId                 = WH_KEYID_ERASED;
+    int      hsmKeyInit                  = 0;
+    int      swKeyInit                   = 0;
+    int      ret                         = WH_ERROR_OK;
+    int      i;
+
+    /* Use non-repeating pattern to detect hash truncation bugs */
+    for (i = 0; i < WH_TEST_ECC_HASH_SIZE; i++) {
+        hash[i] = (uint8_t)i;
+    }
+
+    WH_TEST_PRINT("  Testing async Sign/Verify %s curve...\n", name);
+
+    pubXLen = keySize;
+    pubYLen = keySize;
+
+    ret = wc_ecc_init_ex(hsmKey, NULL, WH_DEV_ID);
+    if (ret == 0) {
+        hsmKeyInit = 1;
+        ret        = wc_ecc_make_key(rng, keySize, hsmKey);
+    }
+    if (ret == 0) {
+        uint8_t signLabel[] = "TestEccAsyncSign";
+        signKeyId           = WH_KEYID_ERASED;
+        ret                 = wh_Client_EccImportKey(ctx, hsmKey, &signKeyId,
+                                                     WH_NVM_FLAGS_USAGE_SIGN, sizeof(signLabel),
+                                                     signLabel);
+    }
+
+    /* Async sign */
+    if (ret == 0) {
+        sigLen = sizeof(sig);
+        ret    = wh_Client_EccSignRequest(ctx, signKeyId, hash, sizeof(hash));
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: EccSignRequest failed: %d\n", name, ret);
+        }
+    }
+    if (ret == 0) {
+        do {
+            ret = wh_Client_EccSignResponse(ctx, sig, &sigLen);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: EccSignResponse failed: %d\n", name, ret);
+        }
+    }
+
+    /* Precondition: erased keyId must return BADARGS from Request */
+    if (ret == 0) {
+        int badret =
+            wh_Client_EccSignRequest(ctx, WH_KEYID_ERASED, hash, sizeof(hash));
+        if (badret != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT("%s: EccSignRequest with erased keyId returned %d "
+                           "(want BADARGS)\n",
+                           name, badret);
+            ret = -1;
+        }
+    }
+
+    /* Export public key from HSM for verify path */
+    if (ret == 0) {
+        ret = wc_ecc_export_public_raw(hsmKey, pubX, &pubXLen, pubY, &pubYLen);
+    }
+
+    /* Software verify as an independent sanity check */
+    if (ret == 0) {
+        ret = wc_ecc_init_ex(swKey, NULL, INVALID_DEVID);
+        if (ret == 0) {
+            swKeyInit = 1;
+            ret = wc_ecc_import_unsigned(swKey, pubX, pubY, NULL, curveId);
+        }
+    }
+    if (ret == 0) {
+        res = 0;
+        ret = wc_ecc_verify_hash(sig, sigLen, hash, sizeof(hash), &res, swKey);
+        if (ret == 0 && res != 1) {
+            WH_ERROR_PRINT("%s: async sign produced invalid signature\n", name);
+            ret = -1;
+        }
+    }
+
+    /* Import the public key into a second HSM cache slot and async-verify */
+    if (ret == 0) {
+        ecc_key pubOnly[1] = {0};
+        uint8_t label[]    = "TestEccAsyncVerify";
+
+        ret = wc_ecc_init_ex(pubOnly, NULL, INVALID_DEVID);
+        if (ret == 0) {
+            ret = wc_ecc_import_unsigned(pubOnly, pubX, pubY, NULL, curveId);
+        }
+        if (ret == 0) {
+            verifyKeyId = WH_KEYID_ERASED;
+            ret         = wh_Client_EccImportKey(ctx, pubOnly, &verifyKeyId,
+                                                 WH_NVM_FLAGS_USAGE_VERIFY,
+                                                 sizeof(label), label);
+        }
+        wc_ecc_free(pubOnly);
+    }
+    if (ret == 0) {
+        ret = wh_Client_EccVerifyRequest(ctx, verifyKeyId, sig, sigLen, hash,
+                                         sizeof(hash));
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: EccVerifyRequest failed: %d\n", name, ret);
+        }
+    }
+    if (ret == 0) {
+        res = 0;
+        do {
+            ret = wh_Client_EccVerifyResponse(ctx, NULL, &res);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: EccVerifyResponse failed: %d\n", name, ret);
+        }
+        else if (res != 1) {
+            WH_ERROR_PRINT("%s: async verify returned res=%d (want 1)\n", name,
+                           res);
+            ret = -1;
+        }
+    }
+    if (ret == 0) {
+        int badret = wh_Client_EccVerifyRequest(ctx, WH_KEYID_ERASED, sig,
+                                                sigLen, hash, sizeof(hash));
+        if (badret != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT("%s: EccVerifyRequest with erased keyId returned %d "
+                           "(want BADARGS)\n",
+                           name, badret);
+            ret = -1;
+        }
+    }
+
+    /* NULL ctx must be rejected by every async half (matches RNG discipline).
+     */
+    if (ret == 0) {
+        int rc1 = wh_Client_EccSignRequest(NULL, signKeyId, hash, sizeof(hash));
+        int rc2 = wh_Client_EccSignResponse(NULL, sig, &sigLen);
+        int rc3 = wh_Client_EccVerifyRequest(NULL, verifyKeyId, sig, sigLen,
+                                             hash, sizeof(hash));
+        int rc4 = wh_Client_EccVerifyResponse(NULL, NULL, &res);
+        if (rc1 != WH_ERROR_BADARGS || rc2 != WH_ERROR_BADARGS ||
+            rc3 != WH_ERROR_BADARGS || rc4 != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT("%s: NULL ctx async API rc=(%d,%d,%d,%d) want all "
+                           "BADARGS\n",
+                           name, rc1, rc2, rc3, rc4);
+            ret = -1;
+        }
+    }
+
+    /* Mismatched output-arg shape on Response must BADARGS pre-Recv. ctx has
+     * no pending request here, so this also confirms the call is
+     * non-mutating. */
+    if (ret == 0) {
+        int rc1 = wh_Client_EccSignResponse(ctx, sig, NULL);
+        int rc2 = wh_Client_EccVerifyResponse(ctx, NULL, NULL);
+        if (rc1 != WH_ERROR_BADARGS || rc2 != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "%s: bad-arg Response rc=(%d,%d) want both BADARGS\n", name,
+                rc1, rc2);
+            ret = -1;
+        }
+    }
+
+    /* Wrapper-level regression: response-side bad args must be caught before
+     * SendRequest so the caller's ctx is not left stuck-pending. */
+    if (ret == 0) {
+        int badret = wh_Client_EccVerify(ctx, hsmKey, sig, sigLen, hash,
+                                         sizeof(hash), NULL);
+        if (badret != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT("%s: EccVerify with NULL out_res returned %d "
+                           "(want BADARGS)\n",
+                           name, badret);
+            ret = -1;
+        }
+    }
+
+    /* Confirm ctx is still usable after the wrapper rejection. */
+    if (ret == 0) {
+        int rc;
+        sigLen = sizeof(sig);
+        rc     = wh_Client_EccSignRequest(ctx, signKeyId, hash, sizeof(hash));
+        if (rc == WH_ERROR_OK) {
+            do {
+                rc = wh_Client_EccSignResponse(ctx, sig, &sigLen);
+            } while (rc == WH_ERROR_NOTREADY);
+        }
+        if (rc != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: ctx stuck after wrapper BADARGS (rc=%d)\n",
+                           name, rc);
+            ret = -1;
+        }
+    }
+
+    /* Too-small sig buffer must return WH_ERROR_BUFFER_SIZE with the required
+     * size in *inout_sig_len, and must NOT write a partial signature. Mirrors
+     * the matching ECDH regression test, since the implementation explicitly
+     * promises to fail rather than silently truncate signature bytes. */
+    if (ret == 0) {
+        uint8_t  small_buf[1] = {0xAA};
+        uint16_t small_len    = sizeof(small_buf);
+        int      rc;
+        rc = wh_Client_EccSignRequest(ctx, signKeyId, hash, sizeof(hash));
+        if (rc == WH_ERROR_OK) {
+            do {
+                rc = wh_Client_EccSignResponse(ctx, small_buf, &small_len);
+            } while (rc == WH_ERROR_NOTREADY);
+        }
+        if (rc != WH_ERROR_BUFFER_SIZE) {
+            WH_ERROR_PRINT(
+                "%s: too-small buffer Sign Response rc=%d (want BUFFER_SIZE)\n",
+                name, rc);
+            ret = -1;
+        }
+        else if (small_len <= 1 || small_len > ECC_MAX_SIG_SIZE) {
+            WH_ERROR_PRINT("%s: too-small buffer Sign required size=%u "
+                           "(want > 1 and <= ECC_MAX_SIG_SIZE)\n",
+                           name, (unsigned)small_len);
+            ret = -1;
+        }
+        else if (small_buf[0] != 0xAA) {
+            WH_ERROR_PRINT(
+                "%s: partial signature leaked into too-small buffer\n", name);
+            ret = -1;
+        }
+    }
+
+    if (ret == 0) {
+        WH_TEST_PRINT("    async Sign/Verify %s: PASS\n", name);
+    }
+
+    /* Cleanup: evict any cached keys, free wolfCrypt structs */
+    if (!WH_KEYID_ISERASED(verifyKeyId)) {
+        (void)wh_Client_KeyEvict(ctx, verifyKeyId);
+    }
+    if (!WH_KEYID_ISERASED(signKeyId)) {
+        (void)wh_Client_KeyEvict(ctx, signKeyId);
+    }
+    if (swKeyInit) {
+        wc_ecc_free(swKey);
+    }
+    if (hsmKeyInit) {
+        wc_ecc_free(hsmKey);
+    }
+    return ret;
+}
+
+#ifdef HAVE_ECC_DHE
+/**
+ * Test the async Request/Response API for ECDH.
+ *
+ * For each curve:
+ * 1. Generate two HSM ECC keys (both server-cached).
+ * 2. Export public bytes from each, import each into the opposite side as a
+ *    separate cache slot so we have a (private_A, public_B) and
+ *    (private_B, public_A) pair for cross-verification.
+ * 3. Call wh_Client_EccSharedSecretRequest + poll
+ *    wh_Client_EccSharedSecretResponse with (privA, pubB) and (privB, pubA).
+ * 4. Assert both shared secrets are equal.
+ * 5. Assert that *Request() with an erased keyId returns WH_ERROR_BADARGS.
+ */
+static int whTest_CryptoEccSharedSecretAsync_OneCurve(whClientContext* ctx,
+                                                      WC_RNG* rng, int keySize,
+                                                      int         curveId,
+                                                      const char* name)
+{
+    ecc_key  keyA[1]                = {0};
+    ecc_key  keyB[1]                = {0};
+    ecc_key  pubA[1]                = {0};
+    ecc_key  pubB[1]                = {0};
+    uint8_t  pubAx[ECC_MAXSIZE]     = {0};
+    uint8_t  pubAy[ECC_MAXSIZE]     = {0};
+    uint8_t  pubBx[ECC_MAXSIZE]     = {0};
+    uint8_t  pubBy[ECC_MAXSIZE]     = {0};
+    word32   pubAxLen               = 0;
+    word32   pubAyLen               = 0;
+    word32   pubBxLen               = 0;
+    word32   pubByLen               = 0;
+    uint8_t  secret_AB[ECC_MAXSIZE] = {0};
+    uint8_t  secret_BA[ECC_MAXSIZE] = {0};
+    uint16_t secret_AB_len          = sizeof(secret_AB);
+    uint16_t secret_BA_len          = sizeof(secret_BA);
+    whKeyId  privAId                = WH_KEYID_ERASED;
+    whKeyId  privBId                = WH_KEYID_ERASED;
+    whKeyId  pubAId                 = WH_KEYID_ERASED;
+    whKeyId  pubBId                 = WH_KEYID_ERASED;
+    int      keyAInit               = 0;
+    int      keyBInit               = 0;
+    int      pubAInit               = 0;
+    int      pubBInit               = 0;
+    uint8_t  labelA[]               = "TestEccDhAsyncA";
+    uint8_t  labelB[]               = "TestEccDhAsyncB";
+    int      ret                    = WH_ERROR_OK;
+
+    WH_TEST_PRINT("  Testing async ECDH %s curve...\n", name);
+
+    pubAxLen = pubAyLen = pubBxLen = pubByLen = keySize;
+
+    /* Generate two local ECC keys, then import each to the server cache so
+     * that both private keys have valid keyIds usable by the async API. */
+    ret = wc_ecc_init_ex(keyA, NULL, WH_DEV_ID);
+    if (ret == 0) {
+        keyAInit = 1;
+        ret      = wc_ecc_make_key(rng, keySize, keyA);
+    }
+    if (ret == 0) {
+        uint8_t privLabelA[] = "TestEccDhAsyncPrivA";
+        privAId              = WH_KEYID_ERASED;
+        ret                  = wh_Client_EccImportKey(ctx, keyA, &privAId,
+                                                      WH_NVM_FLAGS_USAGE_DERIVE,
+                                                      sizeof(privLabelA), privLabelA);
+    }
+    if (ret == 0) {
+        ret = wc_ecc_init_ex(keyB, NULL, WH_DEV_ID);
+    }
+    if (ret == 0) {
+        keyBInit = 1;
+        ret      = wc_ecc_make_key(rng, keySize, keyB);
+    }
+    if (ret == 0) {
+        uint8_t privLabelB[] = "TestEccDhAsyncPrivB";
+        privBId              = WH_KEYID_ERASED;
+        ret                  = wh_Client_EccImportKey(ctx, keyB, &privBId,
+                                                      WH_NVM_FLAGS_USAGE_DERIVE,
+                                                      sizeof(privLabelB), privLabelB);
+    }
+
+    /* Export raw public bytes so we can import into independent cache slots */
+    if (ret == 0) {
+        ret =
+            wc_ecc_export_public_raw(keyA, pubAx, &pubAxLen, pubAy, &pubAyLen);
+    }
+    if (ret == 0) {
+        ret =
+            wc_ecc_export_public_raw(keyB, pubBx, &pubBxLen, pubBy, &pubByLen);
+    }
+
+    /* Build public-only keys and import each as a distinct cache slot */
+    if (ret == 0) {
+        ret = wc_ecc_init_ex(pubA, NULL, INVALID_DEVID);
+        if (ret == 0) {
+            pubAInit = 1;
+            ret = wc_ecc_import_unsigned(pubA, pubAx, pubAy, NULL, curveId);
+        }
+    }
+    if (ret == 0) {
+        ret = wh_Client_EccImportKey(ctx, pubA, &pubAId,
+                                     WH_NVM_FLAGS_USAGE_DERIVE, sizeof(labelA),
+                                     labelA);
+    }
+    if (ret == 0) {
+        ret = wc_ecc_init_ex(pubB, NULL, INVALID_DEVID);
+        if (ret == 0) {
+            pubBInit = 1;
+            ret = wc_ecc_import_unsigned(pubB, pubBx, pubBy, NULL, curveId);
+        }
+    }
+    if (ret == 0) {
+        ret = wh_Client_EccImportKey(ctx, pubB, &pubBId,
+                                     WH_NVM_FLAGS_USAGE_DERIVE, sizeof(labelB),
+                                     labelB);
+    }
+
+    /* Async ECDH: A_priv * B_pub */
+    if (ret == 0) {
+        ret = wh_Client_EccSharedSecretRequest(ctx, privAId, pubBId);
+    }
+    if (ret == 0) {
+        do {
+            ret = wh_Client_EccSharedSecretResponse(ctx, secret_AB,
+                                                    &secret_AB_len);
+        } while (ret == WH_ERROR_NOTREADY);
+    }
+
+    /* Async ECDH: B_priv * A_pub */
+    if (ret == 0) {
+        ret = wh_Client_EccSharedSecretRequest(ctx, privBId, pubAId);
+    }
+    if (ret == 0) {
+        do {
+            ret = wh_Client_EccSharedSecretResponse(ctx, secret_BA,
+                                                    &secret_BA_len);
+        } while (ret == WH_ERROR_NOTREADY);
+    }
+
+    if (ret == 0) {
+        if (secret_AB_len != secret_BA_len ||
+            memcmp(secret_AB, secret_BA, secret_AB_len) != 0) {
+            WH_ERROR_PRINT("%s: async ECDH secrets differ across sides\n",
+                           name);
+            ret = -1;
+        }
+    }
+
+    /* Too-small output buffer must return WH_ERROR_BUFFER_SIZE with the
+     * required size in *inout_size, and must NOT write a partial secret. */
+    if (ret == 0) {
+        uint8_t  small_buf[1] = {0xAA};
+        uint16_t small_len    = sizeof(small_buf);
+        int      rc;
+        rc = wh_Client_EccSharedSecretRequest(ctx, privAId, pubBId);
+        if (rc == WH_ERROR_OK) {
+            do {
+                rc = wh_Client_EccSharedSecretResponse(ctx, small_buf,
+                                                       &small_len);
+            } while (rc == WH_ERROR_NOTREADY);
+        }
+        if (rc != WH_ERROR_BUFFER_SIZE) {
+            WH_ERROR_PRINT(
+                "%s: too-small buffer ECDH Response rc=%d (want BUFFER_SIZE)\n",
+                name, rc);
+            ret = -1;
+        }
+        else if (small_len != secret_AB_len) {
+            WH_ERROR_PRINT("%s: too-small buffer required size=%u (want %u)\n",
+                           name, (unsigned)small_len, (unsigned)secret_AB_len);
+            ret = -1;
+        }
+        else if (small_buf[0] != 0xAA) {
+            WH_ERROR_PRINT("%s: partial secret leaked into too-small buffer\n",
+                           name);
+            ret = -1;
+        }
+    }
+
+    /* Wrapper path must surface BUFFER_SIZE the same way. */
+    if (ret == 0) {
+        uint8_t  small_buf[1] = {0xAA};
+        uint16_t small_len    = sizeof(small_buf);
+        int      rc =
+            wh_Client_EccSharedSecret(ctx, keyA, pubB, small_buf, &small_len);
+        if (rc != WH_ERROR_BUFFER_SIZE) {
+            WH_ERROR_PRINT(
+                "%s: too-small buffer ECDH wrapper rc=%d (want BUFFER_SIZE)\n",
+                name, rc);
+            ret = -1;
+        }
+        else if (small_len != secret_AB_len) {
+            WH_ERROR_PRINT("%s: wrapper too-small required size=%u (want %u)\n",
+                           name, (unsigned)small_len, (unsigned)secret_AB_len);
+            ret = -1;
+        }
+        else if (small_buf[0] != 0xAA) {
+            WH_ERROR_PRINT(
+                "%s: wrapper leaked partial secret into too-small buffer\n",
+                name);
+            ret = -1;
+        }
+    }
+
+    /* Precondition: erased keyId on either side must return BADARGS */
+    if (ret == 0) {
+        int badret =
+            wh_Client_EccSharedSecretRequest(ctx, WH_KEYID_ERASED, pubBId);
+        if (badret != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "%s: ECDH Request with erased priv keyId returned %d\n", name,
+                badret);
+            ret = -1;
+        }
+    }
+    if (ret == 0) {
+        int badret =
+            wh_Client_EccSharedSecretRequest(ctx, privAId, WH_KEYID_ERASED);
+        if (badret != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "%s: ECDH Request with erased pub keyId returned %d\n", name,
+                badret);
+            ret = -1;
+        }
+    }
+
+    /* NULL ctx must be rejected by both async halves. */
+    if (ret == 0) {
+        int rc1 = wh_Client_EccSharedSecretRequest(NULL, privAId, pubBId);
+        int rc2 =
+            wh_Client_EccSharedSecretResponse(NULL, secret_AB, &secret_AB_len);
+        if (rc1 != WH_ERROR_BADARGS || rc2 != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT("%s: NULL ctx async ECDH rc=(%d,%d) want BADARGS\n",
+                           name, rc1, rc2);
+            ret = -1;
+        }
+    }
+
+    /* Response must reject (out != NULL && inout_size == NULL) pre-Recv. */
+    if (ret == 0) {
+        int rc = wh_Client_EccSharedSecretResponse(ctx, secret_AB, NULL);
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT("%s: SharedSecretResponse(out, NULL) returned %d "
+                           "(want BADARGS)\n",
+                           name, rc);
+            ret = -1;
+        }
+    }
+
+    /* Wrapper-level regression: NULL inout_size must BADARGS pre-Send so the
+     * caller's ctx is not left stuck-pending. */
+    if (ret == 0) {
+        int badret =
+            wh_Client_EccSharedSecret(ctx, keyA, pubB, secret_AB, NULL);
+        if (badret != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "%s: EccSharedSecret with NULL inout_size returned %d "
+                "(want BADARGS)\n",
+                name, badret);
+            ret = -1;
+        }
+    }
+
+    /* Confirm ctx is still usable after the wrapper rejection. */
+    if (ret == 0) {
+        int rc;
+        secret_AB_len = sizeof(secret_AB);
+        rc            = wh_Client_EccSharedSecretRequest(ctx, privAId, pubBId);
+        if (rc == WH_ERROR_OK) {
+            do {
+                rc = wh_Client_EccSharedSecretResponse(ctx, secret_AB,
+                                                       &secret_AB_len);
+            } while (rc == WH_ERROR_NOTREADY);
+        }
+        if (rc != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: ctx stuck after ECDH wrapper BADARGS (rc=%d)\n",
+                           name, rc);
+            ret = -1;
+        }
+    }
+
+    if (ret == 0) {
+        WH_TEST_PRINT("    async ECDH %s: PASS\n", name);
+    }
+
+    /* Cleanup */
+    if (!WH_KEYID_ISERASED(pubBId)) {
+        (void)wh_Client_KeyEvict(ctx, pubBId);
+    }
+    if (!WH_KEYID_ISERASED(pubAId)) {
+        (void)wh_Client_KeyEvict(ctx, pubAId);
+    }
+    if (!WH_KEYID_ISERASED(privBId)) {
+        (void)wh_Client_KeyEvict(ctx, privBId);
+    }
+    if (!WH_KEYID_ISERASED(privAId)) {
+        (void)wh_Client_KeyEvict(ctx, privAId);
+    }
+    if (pubBInit) {
+        wc_ecc_free(pubB);
+    }
+    if (pubAInit) {
+        wc_ecc_free(pubA);
+    }
+    if (keyBInit) {
+        wc_ecc_free(keyB);
+    }
+    if (keyAInit) {
+        wc_ecc_free(keyA);
+    }
+    return ret;
+}
+#endif /* HAVE_ECC_DHE */
+
+/**
+ * Test the async Request/Response API for ECC server-side keygen.
+ *
+ * For each curve:
+ * 1. Use wh_Client_EccMakeCacheKeyRequest + poll
+ *    wh_Client_EccMakeCacheKeyResponse to generate a server-cached key, then
+ *    sign-and-software-verify against the cached keyId to prove the key is
+ *    usable.
+ * 2. Use wh_Client_EccMakeExportKeyRequest + poll
+ *    wh_Client_EccMakeExportKeyResponse to generate an ephemeral key returned
+ *    to the client; verify the wolfCrypt struct is populated and the curve
+ *    matches.
+ * 3. Assert the precondition / arg-shape contract on each async half.
+ */
+static int whTest_CryptoEccMakeKeyAsync_OneCurve(whClientContext* ctx,
+                                                 WC_RNG* rng, int keySize,
+                                                 int curveId, const char* name)
+{
+    ecc_key  exportKey[1]                = {0};
+    ecc_key  swKey[1]                    = {0};
+    uint8_t  hash[WH_TEST_ECC_HASH_SIZE] = {0};
+    uint8_t  sig[ECC_MAX_SIG_SIZE]       = {0};
+    uint8_t  pubX[ECC_MAXSIZE]           = {0};
+    uint8_t  pubY[ECC_MAXSIZE]           = {0};
+    word32   pubXLen                     = 0;
+    word32   pubYLen                     = 0;
+    uint16_t sigLen                      = 0;
+    int      res                         = 0;
+    whKeyId  cacheKeyId                  = WH_KEYID_ERASED;
+    int      exportKeyInit               = 0;
+    int      swKeyInit                   = 0;
+    uint8_t  cacheLabel[]                = "TestEccAsyncCacheGen";
+    int      ret                         = WH_ERROR_OK;
+    int      i;
+
+    /* Use non-repeating pattern so we'd notice silent truncation */
+    for (i = 0; i < WH_TEST_ECC_HASH_SIZE; i++) {
+        hash[i] = (uint8_t)i;
+    }
+
+    pubXLen = keySize;
+    pubYLen = keySize;
+
+    WH_TEST_PRINT("  Testing async MakeKey %s curve...\n", name);
+
+    /* --- MakeCacheKey async: generate, then sign with the new keyId --- */
+    if (ret == 0) {
+        ret = wh_Client_EccMakeCacheKeyRequest(
+            ctx, keySize, curveId, WH_KEYID_ERASED, WH_NVM_FLAGS_USAGE_SIGN,
+            sizeof(cacheLabel), cacheLabel);
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: EccMakeCacheKeyRequest failed: %d\n", name,
+                           ret);
+        }
+    }
+    if (ret == 0) {
+        do {
+            ret = wh_Client_EccMakeCacheKeyResponse(ctx, &cacheKeyId);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: EccMakeCacheKeyResponse failed: %d\n", name,
+                           ret);
+        }
+        else if (WH_KEYID_ISERASED(cacheKeyId)) {
+            WH_ERROR_PRINT("%s: server returned erased keyId\n", name);
+            ret = -1;
+        }
+    }
+    /* Sign with the cached key via the existing async sign API to prove the
+     * generated key is usable on the server. */
+    if (ret == 0) {
+        sigLen = sizeof(sig);
+        ret    = wh_Client_EccSignRequest(ctx, cacheKeyId, hash, sizeof(hash));
+        if (ret == WH_ERROR_OK) {
+            do {
+                ret = wh_Client_EccSignResponse(ctx, sig, &sigLen);
+            } while (ret == WH_ERROR_NOTREADY);
+        }
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: sign with cache-generated keyId failed: %d\n",
+                           name, ret);
+        }
+    }
+    /* Software-verify the signature using the public half exported from the
+     * server cache. */
+    if (ret == 0) {
+        ecc_key pubOnly[1] = {0};
+        uint8_t labelBuf[WH_NVM_LABEL_LEN];
+        ret = wc_ecc_init_ex(pubOnly, NULL, INVALID_DEVID);
+        if (ret == 0) {
+            ret = wh_Client_EccExportKey(ctx, cacheKeyId, pubOnly,
+                                         sizeof(labelBuf), labelBuf);
+            if (ret == 0) {
+                ret = wc_ecc_export_public_raw(pubOnly, pubX, &pubXLen, pubY,
+                                               &pubYLen);
+            }
+            wc_ecc_free(pubOnly);
+        }
+        if (ret != 0) {
+            WH_ERROR_PRINT("%s: export of cached pub failed: %d\n", name, ret);
+        }
+    }
+    if (ret == 0) {
+        ret = wc_ecc_init_ex(swKey, NULL, INVALID_DEVID);
+        if (ret == 0) {
+            swKeyInit = 1;
+            ret = wc_ecc_import_unsigned(swKey, pubX, pubY, NULL, curveId);
+        }
+        if (ret == 0) {
+            res = 0;
+            ret = wc_ecc_verify_hash(sig, sigLen, hash, sizeof(hash), &res,
+                                     swKey);
+            if (ret == 0 && res != 1) {
+                WH_ERROR_PRINT(
+                    "%s: software verify of cache-generated key failed\n",
+                    name);
+                ret = -1;
+            }
+        }
+    }
+    if (swKeyInit) {
+        wc_ecc_free(swKey);
+    }
+
+    /* --- MakeExportKey async: generate, sign locally, verify locally --- */
+    if (ret == 0) {
+        ret = wc_ecc_init_ex(exportKey, NULL, INVALID_DEVID);
+        if (ret == 0) {
+            exportKeyInit = 1;
+        }
+    }
+    if (ret == 0) {
+        ret = wh_Client_EccMakeExportKeyRequest(ctx, keySize, curveId);
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: EccMakeExportKeyRequest failed: %d\n", name,
+                           ret);
+        }
+    }
+    if (ret == 0) {
+        do {
+            ret = wh_Client_EccMakeExportKeyResponse(ctx, exportKey);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: EccMakeExportKeyResponse failed: %d\n", name,
+                           ret);
+        }
+    }
+    /* Sanity-check the deserialized key by sign+verify entirely locally. */
+    if (ret == 0) {
+        word32 swSigLen = sizeof(sig);
+        memset(sig, 0, sizeof(sig));
+        ret = wc_ecc_sign_hash(hash, sizeof(hash), sig, &swSigLen, rng,
+                               exportKey);
+        if (ret == 0) {
+            res = 0;
+            ret = wc_ecc_verify_hash(sig, swSigLen, hash, sizeof(hash), &res,
+                                     exportKey);
+            if (ret == 0 && res != 1) {
+                WH_ERROR_PRINT(
+                    "%s: local verify of exported keygen key failed\n", name);
+                ret = -1;
+            }
+        }
+        if (ret != 0) {
+            WH_ERROR_PRINT(
+                "%s: local sign/verify of exported keygen key failed: %d\n",
+                name, ret);
+        }
+    }
+
+    /* --- BADARGS: NULL ctx must be rejected by every async half. --- */
+    if (ret == 0) {
+        int rc1 = wh_Client_EccMakeCacheKeyRequest(NULL, keySize, curveId,
+                                                   WH_KEYID_ERASED,
+                                                   WH_NVM_FLAGS_NONE, 0, NULL);
+        int rc2 = wh_Client_EccMakeCacheKeyResponse(NULL, &cacheKeyId);
+        int rc3 = wh_Client_EccMakeExportKeyRequest(NULL, keySize, curveId);
+        int rc4 = wh_Client_EccMakeExportKeyResponse(NULL, exportKey);
+        if (rc1 != WH_ERROR_BADARGS || rc2 != WH_ERROR_BADARGS ||
+            rc3 != WH_ERROR_BADARGS || rc4 != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT("%s: NULL ctx async MakeKey rc=(%d,%d,%d,%d) want "
+                           "all BADARGS\n",
+                           name, rc1, rc2, rc3, rc4);
+            ret = -1;
+        }
+    }
+
+    /* --- BADARGS: NULL out args. ctx has no pending request, so this also
+     * confirms these calls don't mutate state. --- */
+    if (ret == 0) {
+        int rc1 = wh_Client_EccMakeCacheKeyResponse(ctx, NULL);
+        int rc2 = wh_Client_EccMakeExportKeyResponse(ctx, NULL);
+        if (rc1 != WH_ERROR_BADARGS || rc2 != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT(
+                "%s: NULL out arg Response rc=(%d,%d) want both BADARGS\n",
+                name, rc1, rc2);
+            ret = -1;
+        }
+    }
+
+    /* --- BADARGS: EPHEMERAL flag must be rejected by the cache Request so
+     * the export pair owns ephemeral keygen unambiguously. --- */
+    if (ret == 0) {
+        int rc = wh_Client_EccMakeCacheKeyRequest(
+            ctx, keySize, curveId, WH_KEYID_ERASED, WH_NVM_FLAGS_EPHEMERAL, 0,
+            NULL);
+        if (rc != WH_ERROR_BADARGS) {
+            WH_ERROR_PRINT("%s: cache Request with EPHEMERAL flag returned %d "
+                           "(want BADARGS)\n",
+                           name, rc);
+            ret = -1;
+        }
+    }
+
+    /* --- Confirm ctx is still usable after the BADARGS rejections. --- */
+    if (ret == 0) {
+        whKeyId tmpId = WH_KEYID_ERASED;
+        int     rc    = wh_Client_EccMakeCacheKeyRequest(
+            ctx, keySize, curveId, WH_KEYID_ERASED, WH_NVM_FLAGS_USAGE_SIGN,
+            sizeof(cacheLabel), cacheLabel);
+        if (rc == WH_ERROR_OK) {
+            do {
+                rc = wh_Client_EccMakeCacheKeyResponse(ctx, &tmpId);
+            } while (rc == WH_ERROR_NOTREADY);
+        }
+        if (rc != WH_ERROR_OK) {
+            WH_ERROR_PRINT("%s: ctx stuck after MakeKey BADARGS (rc=%d)\n",
+                           name, rc);
+            ret = -1;
+        }
+        if (!WH_KEYID_ISERASED(tmpId)) {
+            (void)wh_Client_KeyEvict(ctx, tmpId);
+        }
+    }
+
+    if (ret == 0) {
+        WH_TEST_PRINT("    async MakeKey %s: PASS\n", name);
+    }
+
+    /* Cleanup */
+    if (!WH_KEYID_ISERASED(cacheKeyId)) {
+        (void)wh_Client_KeyEvict(ctx, cacheKeyId);
+    }
+    if (exportKeyInit) {
+        wc_ecc_free(exportKey);
+    }
+    return ret;
+}
+
+static int whTest_CryptoEccAsync(whClientContext* ctx, WC_RNG* rng)
+{
+    int ret = WH_ERROR_OK;
+
+    WH_TEST_PRINT("Testing ECC async API...\n");
+
+#if !defined(NO_ECC256)
+    if (ret == 0) {
+        ret = whTest_CryptoEccSignVerifyAsync_OneCurve(
+            ctx, rng, WH_TEST_ECC_P256_KEY_SIZE, ECC_SECP256R1, "P-256");
+    }
+#ifdef HAVE_ECC_DHE
+    if (ret == 0) {
+        ret = whTest_CryptoEccSharedSecretAsync_OneCurve(
+            ctx, rng, WH_TEST_ECC_P256_KEY_SIZE, ECC_SECP256R1, "P-256");
+    }
+#endif
+    if (ret == 0) {
+        ret = whTest_CryptoEccMakeKeyAsync_OneCurve(
+            ctx, rng, WH_TEST_ECC_P256_KEY_SIZE, ECC_SECP256R1, "P-256");
+    }
+#endif
+
+#if (defined(HAVE_ECC384) || defined(HAVE_ALL_CURVES)) && ECC_MIN_KEY_SZ <= 384
+    if (ret == 0) {
+        ret = whTest_CryptoEccSignVerifyAsync_OneCurve(
+            ctx, rng, WH_TEST_ECC_P384_KEY_SIZE, ECC_SECP384R1, "P-384");
+    }
+#ifdef HAVE_ECC_DHE
+    if (ret == 0) {
+        ret = whTest_CryptoEccSharedSecretAsync_OneCurve(
+            ctx, rng, WH_TEST_ECC_P384_KEY_SIZE, ECC_SECP384R1, "P-384");
+    }
+#endif
+    if (ret == 0) {
+        ret = whTest_CryptoEccMakeKeyAsync_OneCurve(
+            ctx, rng, WH_TEST_ECC_P384_KEY_SIZE, ECC_SECP384R1, "P-384");
+    }
+#endif
+
+#if (defined(HAVE_ECC521) || defined(HAVE_ALL_CURVES)) && ECC_MIN_KEY_SZ <= 521
+    if (ret == 0) {
+        ret = whTest_CryptoEccSignVerifyAsync_OneCurve(
+            ctx, rng, WH_TEST_ECC_P521_KEY_SIZE, ECC_SECP521R1, "P-521");
+    }
+#ifdef HAVE_ECC_DHE
+    if (ret == 0) {
+        ret = whTest_CryptoEccSharedSecretAsync_OneCurve(
+            ctx, rng, WH_TEST_ECC_P521_KEY_SIZE, ECC_SECP521R1, "P-521");
+    }
+#endif
+    if (ret == 0) {
+        ret = whTest_CryptoEccMakeKeyAsync_OneCurve(
+            ctx, rng, WH_TEST_ECC_P521_KEY_SIZE, ECC_SECP521R1, "P-521");
+    }
+#endif
+
+    if (ret == 0) {
+        WH_TEST_PRINT("ECC async API SUCCESS\n");
+    }
     return ret;
 }
 #endif /* HAVE_ECC_SIGN && HAVE_ECC_VERIFY && !WOLF_CRYPTO_CB_ONLY_ECC */
@@ -8116,6 +9284,17 @@ int whTest_CryptoClientConfig(whClientConfig* config)
         }
     }
 
+    /* Direct exercise of the async RNG primitives (does not go through the
+     * wolfCrypt callback path, so devId is not relevant). */
+    if (ret == WH_ERROR_OK) {
+        ret = whTest_CryptoRngAsync(client);
+    }
+#ifdef WOLFHSM_CFG_DMA
+    if (ret == WH_ERROR_OK) {
+        ret = whTest_CryptoRngDmaAsync(client);
+    }
+#endif /* WOLFHSM_CFG_DMA */
+
     /* Now that we have tested all RNG devIds, reinitialize the default RNG
      * devId (non-DMA) that will be used by the remainder of the tests for
      * random input generation */
@@ -8190,6 +9369,9 @@ int whTest_CryptoClientConfig(whClientConfig* config)
     !defined(WOLF_CRYPTO_CB_ONLY_ECC)
     if (ret == 0) {
         ret = whTest_CryptoEccCrossVerify(client, rng);
+    }
+    if (ret == 0) {
+        ret = whTest_CryptoEccAsync(client, rng);
     }
 #endif
 #ifdef WOLFHSM_CFG_DMA

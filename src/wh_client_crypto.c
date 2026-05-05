@@ -70,10 +70,13 @@
 
 /** Forward declarations */
 #ifdef HAVE_ECC
-/* Server creates a key based on incoming flags */
-static int _EccMakeKey(whClientContext* ctx, int size, int curveId,
-                       whKeyId* inout_key_id, whNvmFlags flags,
-                       uint16_t label_len, uint8_t* label, ecc_key* key);
+/* Async halves of the keygen path used by the public Request/Response APIs
+ * and the blocking wrappers wh_Client_EccMakeCacheKey/EccMakeExportKey. */
+static int _EccMakeKeyRequest(whClientContext* ctx, int size, int curveId,
+                              whKeyId key_id, whNvmFlags flags,
+                              uint16_t label_len, uint8_t* label);
+static int _EccMakeKeyResponse(whClientContext* ctx, whKeyId* out_key_id,
+                               ecc_key* out_key);
 #endif /* HAVE_ECC */
 
 #ifdef HAVE_CURVE25519
@@ -175,155 +178,232 @@ static int _getCryptoResponse(uint8_t* respBuf, uint16_t type,
 }
 
 /** Implementations */
-int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size)
+int wh_Client_RngGenerateRequest(whClientContext* ctx, uint32_t size)
 {
-    int                          ret = WH_ERROR_OK;
-    whMessageCrypto_RngRequest*  req;
-    whMessageCrypto_RngResponse* res;
-    uint8_t*                     dataPtr;
-    uint8_t*                     reqData;
+    whMessageCrypto_RngRequest* req;
+    uint8_t*                    dataPtr;
+    uint16_t                    req_len;
 
-    if (ctx == NULL) {
+    if (ctx == NULL || size == 0) {
+        return WH_ERROR_BADARGS;
+    }
+    if (size > WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Get data buffer */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Setup generic header and get pointer to request data */
-    reqData =
-        _createCryptoRequest(dataPtr, WC_ALGO_TYPE_RNG, ctx->cryptoAffinity);
+    req = (whMessageCrypto_RngRequest*)_createCryptoRequest(
+        dataPtr, WC_ALGO_TYPE_RNG, ctx->cryptoAffinity);
+    req->sz = size;
 
-    /* Setup request header */
-    req = (whMessageCrypto_RngRequest*)reqData;
+    req_len =
+        (uint16_t)(sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req));
 
-    /* Calculate maximum data size client can request (subtract headers) */
-    const uint32_t client_max_data =
-        WOLFHSM_CFG_COMM_DATA_LEN -
-        sizeof(whMessageCrypto_GenericRequestHeader) -
-        sizeof(whMessageCrypto_RngRequest);
+    WH_DEBUG_CLIENT_VERBOSE("RNG req: size=%u\n", (unsigned int)size);
 
-    while ((size > 0) && (ret == WH_ERROR_OK)) {
-        /* Request Message */
-        uint16_t group   = WH_MESSAGE_GROUP_CRYPTO;
-        uint16_t action  = WC_ALGO_TYPE_RNG;
-        uint16_t req_len = sizeof(whMessageCrypto_GenericRequestHeader) +
-                           sizeof(whMessageCrypto_RngRequest);
-        uint16_t res_len;
+    return wh_Client_SendRequest(ctx, WH_MESSAGE_GROUP_CRYPTO, WC_ALGO_TYPE_RNG,
+                                 req_len, dataPtr);
+}
 
-        /* Request up to client max, but no more than remaining size */
-        uint32_t chunk_size = (size < client_max_data) ? size : client_max_data;
-        req->sz             = chunk_size;
+int wh_Client_RngGenerateResponse(whClientContext* ctx, uint8_t* out,
+                                  uint32_t* inout_size)
+{
+    int                          ret;
+    uint16_t                     group;
+    uint16_t                     action;
+    uint16_t                     res_len = 0;
+    uint8_t*                     dataPtr;
+    whMessageCrypto_RngResponse* res = NULL;
 
-        WH_DEBUG_CLIENT_VERBOSE("RNG: size:%u reqsz:%u remaining:%u\n",
-               (unsigned int)chunk_size, (unsigned int)req_len,
-               (unsigned int)size);
-        WH_DEBUG_CLIENT_VERBOSE("RNG: req:%p\n", req);
+    if (ctx == NULL || inout_size == NULL ||
+        (out == NULL && *inout_size != 0)) {
+        return WH_ERROR_BADARGS;
+    }
 
-        /* Send request and get response */
-        ret = wh_Client_SendRequest(ctx, group, action, req_len, dataPtr);
-        if (ret == 0) {
-            do {
-                ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
-                                             dataPtr);
-            } while (ret == WH_ERROR_NOTREADY);
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len, dataPtr);
+    if (ret != WH_ERROR_OK) {
+        return ret;
+    }
+
+    ret = _getCryptoResponse(dataPtr, WC_ALGO_TYPE_RNG, (uint8_t**)&res);
+    if (ret == WH_ERROR_OK) {
+        if (res->sz > WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ ||
+            res->sz > *inout_size) {
+            /* Server returned more than the inline cap or the caller's buffer
+             * can hold. Guard the inline cap first to avoid reading past the
+             * comm buffer on a malformed response. */
+            ret = WH_ERROR_ABORTED;
         }
-        if (ret == WH_ERROR_OK) {
-            /* Get response */
-            ret =
-                _getCryptoResponse(dataPtr, WC_ALGO_TYPE_RNG, (uint8_t**)&res);
-            if (ret == WH_ERROR_OK) {
-                /* Validate server didn't respond with more than requested */
-                if (res->sz <= chunk_size) {
-                    uint8_t* res_out = (uint8_t*)(res + 1);
-                    if (out != NULL) {
-                        memcpy(out, res_out, res->sz);
-                        out += res->sz;
-                    }
-                    size -= res->sz;
-                    WH_DEBUG_CLIENT_VERBOSE("out size:%u remaining:%u\n",
-                           (unsigned int)res->sz, (unsigned int)size);
-                    WH_DEBUG_VERBOSE_HEXDUMP("[client] res_out: \n", out - res->sz,
-                                     res->sz);
-                }
-                else {
-                    /* Server returned more than we can handle - error */
-                    ret = WH_ERROR_ABORTED;
-                }
+        else {
+            if (res->sz > 0 && out != NULL) {
+                memcpy(out, (uint8_t*)(res + 1), res->sz);
             }
+            *inout_size = res->sz;
+            WH_DEBUG_CLIENT_VERBOSE("RNG resp: size=%u\n",
+                                    (unsigned int)res->sz);
         }
     }
     return ret;
 }
 
-#ifdef WOLFHSM_CFG_DMA
-int wh_Client_RngGenerateDma(whClientContext* ctx, uint8_t* out, uint32_t size)
+int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size)
 {
-    int                             ret     = WH_ERROR_OK;
-    uint8_t*                        dataPtr = NULL;
-    whMessageCrypto_RngDmaRequest*  req     = NULL;
-    whMessageCrypto_RngDmaResponse* resp    = NULL;
-    uint16_t                        respSz  = 0;
-    uintptr_t                       outAddr = 0;
+    int            ret = WH_ERROR_OK;
+    uint32_t       remaining;
+    const uint32_t cap = (uint32_t)WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ;
 
-    if ((ctx == NULL) || (out == NULL) || (size == 0)) {
+    if (ctx == NULL || out == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Get data pointer from the context to use as request/response storage */
+    remaining = size;
+    while (ret == WH_ERROR_OK && remaining > 0) {
+        uint32_t chunk = (remaining < cap) ? remaining : cap;
+        uint32_t got   = chunk;
+
+        ret = wh_Client_RngGenerateRequest(ctx, chunk);
+        if (ret != WH_ERROR_OK) {
+            break;
+        }
+        do {
+            ret = wh_Client_RngGenerateResponse(ctx, out, &got);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret != WH_ERROR_OK) {
+            break;
+        }
+        if (got == 0) {
+            /* Server returned nothing for a non-zero request — guard against
+             * infinite loop. */
+            ret = WH_ERROR_ABORTED;
+            break;
+        }
+        out += got;
+        remaining -= got;
+    }
+    return ret;
+}
+
+#ifdef WOLFHSM_CFG_DMA
+int wh_Client_RngGenerateDmaRequest(whClientContext* ctx, uint8_t* out,
+                                    uint32_t size)
+{
+    int                            ret             = WH_ERROR_OK;
+    uint8_t*                       dataPtr         = NULL;
+    whMessageCrypto_RngDmaRequest* req             = NULL;
+    uintptr_t                      outAddr         = 0;
+    bool                           outAddrAcquired = false;
+
+    if (ctx == NULL || out == NULL || size == 0) {
+        return WH_ERROR_BADARGS;
+    }
+    /* Fail-fast on occupied transport to avoid acquiring a DMA mapping that
+     * would be leaked if SendRequest later rejects the request. */
+    if (wh_CommClient_IsRequestPending(ctx->comm) == 1) {
+        return WH_ERROR_REQUEST_PENDING;
+    }
+
     dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Setup generic header and get pointer to request data */
     req = (whMessageCrypto_RngDmaRequest*)_createCryptoRequest(
         dataPtr, WC_ALGO_TYPE_RNG, ctx->cryptoAffinity);
 
-    /* Set up output buffer address and size */
-    req->output.sz = size;
+    req->output.sz   = size;
+    req->output.addr = 0;
 
-    /* Perform address translation for output buffer (PRE operation) */
+    /* PRE address translation for the output buffer */
     ret = wh_Client_DmaProcessClientAddress(
-        ctx, (uintptr_t)out, (void**)&outAddr, req->output.sz,
+        ctx, (uintptr_t)out, (void**)&outAddr, size,
         WH_DMA_OPER_CLIENT_WRITE_PRE, (whDmaFlags){0});
     if (ret == WH_ERROR_OK) {
+        outAddrAcquired  = true;
         req->output.addr = outAddr;
     }
 
     if (ret == WH_ERROR_OK) {
-        /* Send the request to the server */
+        /* Stash for POST cleanup in the matching Response */
+        ctx->dma.asyncCtx.rng.outAddr    = outAddr;
+        ctx->dma.asyncCtx.rng.clientAddr = (uintptr_t)out;
+        ctx->dma.asyncCtx.rng.outSz      = size;
+
         ret = wh_Client_SendRequest(
             ctx, WH_MESSAGE_GROUP_CRYPTO_DMA, WC_ALGO_TYPE_RNG,
             sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req),
-            (uint8_t*)dataPtr);
+            dataPtr);
+    }
+
+    if (ret != WH_ERROR_OK && outAddrAcquired) {
+        /* Release the mapping if SendRequest failed; the Response will not run
+         * and the stash is meaningless. */
+        (void)wh_Client_DmaProcessClientAddress(
+            ctx, (uintptr_t)out, (void**)&outAddr, size,
+            WH_DMA_OPER_CLIENT_WRITE_POST, (whDmaFlags){0});
+        ctx->dma.asyncCtx.rng.outSz = 0;
+    }
+    return ret;
+}
+
+int wh_Client_RngGenerateDmaResponse(whClientContext* ctx)
+{
+    int                             ret     = WH_ERROR_OK;
+    uint8_t*                        dataPtr = NULL;
+    whMessageCrypto_RngDmaResponse* resp    = NULL;
+    uint16_t                        respSz  = 0;
+
+    if (ctx == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    dataPtr = (uint8_t*)wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    ret = wh_Client_RecvResponse(ctx, NULL, NULL, &respSz, dataPtr);
+    if (ret == WH_ERROR_NOTREADY) {
+        return ret;
     }
 
     if (ret == WH_ERROR_OK) {
-        /* Wait for and receive the response */
+        ret = _getCryptoResponse(dataPtr, WC_ALGO_TYPE_RNG, (uint8_t**)&resp);
+        /* On success, server has written random bytes directly to client
+         * memory — nothing else to copy. */
+    }
+
+    /* POST DMA cleanup using stashed addresses (runs on every non-NOTREADY
+     * exit so the client buffer is safe to read regardless of error). */
+    if (ctx->dma.asyncCtx.rng.outSz > 0) {
+        uintptr_t outAddr = ctx->dma.asyncCtx.rng.outAddr;
+        (void)wh_Client_DmaProcessClientAddress(
+            ctx, ctx->dma.asyncCtx.rng.clientAddr, (void**)&outAddr,
+            ctx->dma.asyncCtx.rng.outSz, WH_DMA_OPER_CLIENT_WRITE_POST,
+            (whDmaFlags){0});
+        ctx->dma.asyncCtx.rng.outSz = 0;
+    }
+    return ret;
+}
+
+int wh_Client_RngGenerateDma(whClientContext* ctx, uint8_t* out, uint32_t size)
+{
+    int ret;
+
+    ret = wh_Client_RngGenerateDmaRequest(ctx, out, size);
+    if (ret == WH_ERROR_OK) {
         do {
-            ret = wh_Client_RecvResponse(ctx, NULL, NULL, &respSz,
-                                         (uint8_t*)dataPtr);
+            ret = wh_Client_RngGenerateDmaResponse(ctx);
         } while (ret == WH_ERROR_NOTREADY);
     }
-
-    if (ret == WH_ERROR_OK) {
-        /* Get response structure pointer, validates generic header rc */
-        ret = _getCryptoResponse(dataPtr, WC_ALGO_TYPE_RNG, (uint8_t**)&resp);
-        /* Nothing more to do on success, as server will have written random
-         * bytes directly to client memory */
-    }
-
-    /* Perform address translation cleanup (POST operation)
-     * This is called regardless of successful operation to give the callback a
-     * chance for cleanup */
-    (void)wh_Client_DmaProcessClientAddress(
-        ctx, (uintptr_t)out, (void**)&outAddr, size,
-        WH_DMA_OPER_CLIENT_WRITE_POST, (whDmaFlags){0});
-
     return ret;
 }
 #endif /* WOLFHSM_CFG_DMA */
@@ -1559,145 +1639,295 @@ int wh_Client_EccExportPublicKey(whClientContext* ctx, whKeyId keyId,
     return ret;
 }
 
-static int _EccMakeKey(whClientContext* ctx, int size, int curveId,
-                       whKeyId* inout_key_id, whNvmFlags flags,
-                       uint16_t label_len, uint8_t* label, ecc_key* key)
+/* Shared async Request half for ECC keygen.  Builds and sends the keygen
+ * request packet.  The caller must arrange the matching async Response (or
+ * blocking poll) to consume the reply. */
+static int _EccMakeKeyRequest(whClientContext* ctx, int size, int curveId,
+                              whKeyId key_id, whNvmFlags flags,
+                              uint16_t label_len, uint8_t* label)
 {
-    int                                ret     = WH_ERROR_OK;
-    whKeyId                            key_id  = WH_KEYID_ERASED;
+    whMessageCrypto_EccKeyGenRequest* req     = NULL;
+    uint8_t*                          dataPtr = NULL;
+    uint16_t                          req_len;
+
+    if (ctx == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
+        return WH_ERROR_BADARGS;
+    }
+
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    req = (whMessageCrypto_EccKeyGenRequest*)_createCryptoRequest(
+        dataPtr, WC_PK_TYPE_EC_KEYGEN, ctx->cryptoAffinity);
+
+    memset(req, 0, sizeof(*req));
+    req->sz      = size;
+    req->curveId = curveId;
+    req->flags   = flags;
+    req->keyId   = key_id;
+    if ((label != NULL) && (label_len > 0)) {
+        if (label_len > WH_NVM_LABEL_LEN) {
+            label_len = WH_NVM_LABEL_LEN;
+        }
+        memcpy(req->label, label, label_len);
+    }
+
+    WH_DEBUG_CLIENT_VERBOSE("EccMakeKey req: size=%u curveId=%d flags=0x%x\n",
+                            (unsigned)size, curveId, (unsigned)flags);
+
+    return wh_Client_SendRequest(ctx, WH_MESSAGE_GROUP_CRYPTO, WC_ALGO_TYPE_PK,
+                                 req_len, dataPtr);
+}
+
+/* Shared async Response half for ECC keygen.  Single-shot receive: returns
+ * WH_ERROR_NOTREADY if the reply has not arrived yet.  When the request was
+ * EPHEMERAL (export), the server-supplied DER is deserialized into out_key;
+ * otherwise the assigned keyId is written to *out_key_id (if non-NULL) and
+ * also stamped into out_key->devCtx (if non-NULL). */
+static int _EccMakeKeyResponse(whClientContext* ctx, whKeyId* out_key_id,
+                               ecc_key* out_key)
+{
+    int                                ret;
+    uint16_t                           group;
+    uint16_t                           action;
+    uint16_t                           res_len = 0;
     uint8_t*                           dataPtr = NULL;
-    whMessageCrypto_EccKeyGenRequest*  req     = NULL;
     whMessageCrypto_EccKeyGenResponse* res     = NULL;
 
     if (ctx == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Get data pointer from the context to use as request/response storage */
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    /* Setup generic header and get pointer to request data */
-    req = (whMessageCrypto_EccKeyGenRequest*)_createCryptoRequest(
-        dataPtr, WC_PK_TYPE_EC_KEYGEN, ctx->cryptoAffinity);
-
-    /* Use the supplied key id if provided */
-    if (inout_key_id != NULL) {
-        key_id = *inout_key_id;
+    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len, dataPtr);
+    if (ret != WH_ERROR_OK) {
+        return ret;
     }
 
-    /* No other calls before here, so this is always true */
-    if (ret == WH_ERROR_OK) {
-        /* Request Message */
-        uint16_t group  = WH_MESSAGE_GROUP_CRYPTO;
-        uint16_t action = WC_ALGO_TYPE_PK;
-
-        uint16_t req_len =
-            sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
-
-        if (req_len <= WOLFHSM_CFG_COMM_DATA_LEN) {
-            memset(req, 0, sizeof(*req));
-            req->sz      = size;
-            req->curveId = curveId;
-            req->flags   = flags;
-            req->keyId   = key_id;
-            if ((label != NULL) && (label_len > 0)) {
-                if (label_len > WH_NVM_LABEL_LEN) {
-                    label_len = WH_NVM_LABEL_LEN;
-                }
-                memcpy(req->label, label, label_len);
-            }
-
-            ret = wh_Client_SendRequest(ctx, group, action, req_len,
-                                        (uint8_t*)dataPtr);
-            WH_DEBUG_CLIENT_VERBOSE("Req sent:size:%u, ret:%d\n",
-                   (unsigned int)req->sz, ret);
-            if (ret == WH_ERROR_OK) {
-                /* Response Message */
-                uint16_t res_len;
-                do {
-                    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
-                                                 (uint8_t*)dataPtr);
-                } while (ret == WH_ERROR_NOTREADY);
-
-                if (ret == WH_ERROR_OK) {
-                    /* Get response structure pointer, validates generic header
-                     * rc */
-                    ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_EC_KEYGEN,
-                                             (uint8_t**)&res);
-                    WH_DEBUG_CLIENT_VERBOSE("Res recv:keyid:%u, len:%u, ret:%d\n",
-                           (unsigned int)res->keyId,
-                           (unsigned int)res->len, ret);
-                    /* wolfCrypt allows positive error codes on success in some
-                     * scenarios */
-                    if (ret >= 0) {
-                        /* Key is cached on server or is ephemeral */
-                        key_id = (whKeyId)(res->keyId);
-
-                        /* Update output variable if requested */
-                        if (inout_key_id != NULL) {
-                            *inout_key_id = key_id;
-                        }
-
-                        /* Update the context if provided */
-                        if (key != NULL) {
-                            /* Set the key_id.  Should be ERASED if EPHEMERAL */
-                            wh_Client_EccSetKeyId(key, key_id);
-
-                            if (flags & WH_NVM_FLAGS_EPHEMERAL) {
-                                uint8_t* key_der  = (uint8_t*)(res + 1);
-                                uint16_t der_size = (uint16_t)(res->len);
-                                /* Response has the exported key */
-                                ret = wh_Crypto_EccDeserializeKeyDer(
-                                    key_der, der_size, key);
-                                WH_DEBUG_VERBOSE_HEXDUMP("[client] KeyGen export:",
-                                                 key_der, der_size);
-                            }
-                        }
-                    }
-                }
-            }
+    /* Get response structure pointer; validates the generic header rc */
+    ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_EC_KEYGEN, (uint8_t**)&res);
+    /* wolfCrypt allows positive error codes on success in some scenarios */
+    if (ret >= 0) {
+        whKeyId      key_id = (whKeyId)(res->keyId);
+        const size_t hdr_sz =
+            sizeof(whMessageCrypto_GenericResponseHeader) + sizeof(*res);
+        /* Defensive bound: res->len must fit within the actual received
+         * frame */
+        if (res_len < hdr_sz || res->len > (res_len - hdr_sz)) {
+            return WH_ERROR_ABORTED;
         }
-        else {
-            ret = WH_ERROR_BADARGS;
+        WH_DEBUG_CLIENT_VERBOSE("EccMakeKey res: keyid:%u len:%u\n",
+                                (unsigned)key_id, (unsigned)res->len);
+
+        if (out_key_id != NULL) {
+            *out_key_id = key_id;
+        }
+
+        /* If a DER blob is present (ephemeral/export keygen), deserialize it
+         * into the supplied key context.  When called from the cache wrapper,
+         * out_key is NULL and the server returns an empty body. */
+        if (out_key != NULL) {
+            if (res->len > 0) {
+                uint8_t* key_der  = (uint8_t*)(res + 1);
+                uint16_t der_size = (uint16_t)(res->len);
+                /* Ephemeral key — leave devCtx ERASED */
+                wh_Client_EccSetKeyId(out_key, WH_KEYID_ERASED);
+                ret =
+                    wh_Crypto_EccDeserializeKeyDer(key_der, der_size, out_key);
+                WH_DEBUG_VERBOSE_HEXDUMP("[client] KeyGen export:", key_der,
+                                         der_size);
+            }
+            else {
+                /* Cached key — stamp the assigned keyId */
+                wh_Client_EccSetKeyId(out_key, key_id);
+            }
         }
     }
     return ret;
+}
+
+int wh_Client_EccMakeCacheKeyRequest(whClientContext* ctx, int size,
+                                     int curveId, whKeyId key_id,
+                                     whNvmFlags flags, uint16_t label_len,
+                                     uint8_t* label)
+{
+    /* The export pair owns ephemeral keygen — reject EPHEMERAL here so callers
+     * don't accidentally export when they meant to cache. */
+    if (flags & WH_NVM_FLAGS_EPHEMERAL) {
+        return WH_ERROR_BADARGS;
+    }
+    return _EccMakeKeyRequest(ctx, size, curveId, key_id, flags, label_len,
+                              label);
+}
+
+int wh_Client_EccMakeCacheKeyResponse(whClientContext* ctx, whKeyId* out_key_id)
+{
+    if (out_key_id == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+    return _EccMakeKeyResponse(ctx, out_key_id, NULL);
+}
+
+int wh_Client_EccMakeExportKeyRequest(whClientContext* ctx, int size,
+                                      int curveId)
+{
+    return _EccMakeKeyRequest(ctx, size, curveId, WH_KEYID_ERASED,
+                              WH_NVM_FLAGS_EPHEMERAL, 0, NULL);
+}
+
+int wh_Client_EccMakeExportKeyResponse(whClientContext* ctx, ecc_key* key)
+{
+    if (key == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+    return _EccMakeKeyResponse(ctx, NULL, key);
 }
 
 int wh_Client_EccMakeCacheKey(whClientContext* ctx, int size, int curveId,
                               whKeyId* inout_key_id, whNvmFlags flags,
                               uint16_t label_len, uint8_t* label)
 {
+    int     ret;
+    whKeyId key_id = WH_KEYID_ERASED;
+
     if (inout_key_id == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    return _EccMakeKey(ctx, size, curveId, inout_key_id, flags, label_len,
-                       label, NULL);
+    ret = wh_Client_EccMakeCacheKeyRequest(ctx, size, curveId, *inout_key_id,
+                                           flags, label_len, label);
+    if (ret == WH_ERROR_OK) {
+        do {
+            ret = wh_Client_EccMakeCacheKeyResponse(ctx, &key_id);
+        } while (ret == WH_ERROR_NOTREADY);
+        if (ret >= 0) {
+            *inout_key_id = key_id;
+        }
+    }
+    return ret;
 }
 
 int wh_Client_EccMakeExportKey(whClientContext* ctx, int size, int curveId,
                                ecc_key* key)
 {
+    int ret;
+
     if (key == NULL) {
         return WH_ERROR_BADARGS;
     }
 
-    return _EccMakeKey(ctx, size, curveId, NULL, WH_NVM_FLAGS_EPHEMERAL, 0,
-                       NULL, key);
+    ret = wh_Client_EccMakeExportKeyRequest(ctx, size, curveId);
+    if (ret == WH_ERROR_OK) {
+        do {
+            ret = wh_Client_EccMakeExportKeyResponse(ctx, key);
+        } while (ret == WH_ERROR_NOTREADY);
+    }
+    return ret;
+}
+
+int wh_Client_EccSharedSecretRequest(whClientContext* ctx, whKeyId prv_key_id,
+                                     whKeyId pub_key_id)
+{
+    whMessageCrypto_EcdhRequest* req     = NULL;
+    uint8_t*                     dataPtr = NULL;
+    uint16_t                     req_len;
+
+    if (ctx == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+    if (WH_KEYID_ISERASED(prv_key_id) || WH_KEYID_ISERASED(pub_key_id)) {
+        return WH_ERROR_BADARGS;
+    }
+
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req);
+    if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
+        return WH_ERROR_BADARGS;
+    }
+
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    req = (whMessageCrypto_EcdhRequest*)_createCryptoRequest(
+        dataPtr, WC_PK_TYPE_ECDH, ctx->cryptoAffinity);
+
+    memset(req, 0, sizeof(*req));
+    req->options      = 0;
+    req->privateKeyId = prv_key_id;
+    req->publicKeyId  = pub_key_id;
+
+    return wh_Client_SendRequest(ctx, WH_MESSAGE_GROUP_CRYPTO, WC_ALGO_TYPE_PK,
+                                 req_len, dataPtr);
+}
+
+int wh_Client_EccSharedSecretResponse(whClientContext* ctx, uint8_t* out,
+                                      uint16_t* inout_size)
+{
+    int                           ret;
+    uint16_t                      group;
+    uint16_t                      action;
+    uint16_t                      res_len = 0;
+    uint8_t*                      dataPtr;
+    whMessageCrypto_EcdhResponse* res = NULL;
+
+    if ((ctx == NULL) || ((out != NULL) && (inout_size == NULL))) {
+        return WH_ERROR_BADARGS;
+    }
+
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len, dataPtr);
+    if (ret != WH_ERROR_OK) {
+        return ret;
+    }
+
+    ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_ECDH, (uint8_t**)&res);
+    if (ret >= 0) {
+        uint8_t*     res_out = (uint8_t*)(res + 1);
+        const size_t hdr_sz =
+            sizeof(whMessageCrypto_GenericResponseHeader) + sizeof(*res);
+        /* Defensive bound: res->sz must fit within the actual received frame */
+        if (res_len < hdr_sz || res->sz > (res_len - hdr_sz)) {
+            return WH_ERROR_ABORTED;
+        }
+        if (inout_size != NULL) {
+            if ((out != NULL) && (res->sz > *inout_size)) {
+                /* Output buffer too small. Report required size and fail
+                 * rather than silently truncating ECDH key material. */
+                *inout_size = res->sz;
+                return WH_ERROR_BUFFER_SIZE;
+            }
+            *inout_size = res->sz;
+            if ((out != NULL) && (res->sz > 0)) {
+                memcpy(out, res_out, res->sz);
+            }
+        }
+    }
+    return ret;
 }
 
 int wh_Client_EccSharedSecret(whClientContext* ctx, ecc_key* priv_key,
                               ecc_key* pub_key, uint8_t* out,
-                              uint16_t* out_size)
+                              uint16_t* inout_size)
 {
-    int                           ret     = WH_ERROR_OK;
-    uint8_t*                      dataPtr = NULL;
-    whMessageCrypto_EcdhRequest*  req     = NULL;
-    whMessageCrypto_EcdhResponse* res     = NULL;
+    int                          ret     = WH_ERROR_OK;
+    uint8_t*                     dataPtr = NULL;
+    whMessageCrypto_EcdhRequest* req     = NULL;
 
     /* Transaction state */
     whKeyId prv_key_id;
@@ -1705,7 +1935,10 @@ int wh_Client_EccSharedSecret(whClientContext* ctx, ecc_key* priv_key,
     whKeyId pub_key_id;
     int     pub_evict = 0;
 
-    if ((ctx == NULL) || (pub_key == NULL) || (priv_key == NULL)) {
+    /* Validate response-side args upfront so we never send a request that the
+     * matching *Response would then reject without consuming the reply. */
+    if ((ctx == NULL) || (pub_key == NULL) || (priv_key == NULL) ||
+        ((out != NULL) && (inout_size == NULL))) {
         return WH_ERROR_BADARGS;
     }
 
@@ -1777,34 +2010,12 @@ int wh_Client_EccSharedSecret(whClientContext* ctx, ecc_key* priv_key,
                 /* Server will evict.  Reset our flags */
                 pub_evict = prv_evict = 0;
 
-                /* Response Message */
-                uint16_t res_len;
-
-                /* Recv Response */
+                /* Poll shared Response */
                 do {
-                    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
-                                                 (uint8_t*)dataPtr);
+                    ret =
+                        wh_Client_EccSharedSecretResponse(ctx, out, inout_size);
                 } while (ret == WH_ERROR_NOTREADY);
                 WH_DEBUG_CLIENT_VERBOSE("resp packet recv. ret:%d\n", ret);
-                if (ret == WH_ERROR_OK) {
-                    /* Get response structure pointer, validates generic header
-                     * rc */
-                    ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_ECDH,
-                                             (uint8_t**)&res);
-                    /* wolfCrypt allows positive error codes on success in some
-                     * scenarios */
-                    if (ret >= 0) {
-                        uint8_t* res_out = (uint8_t*)(res + 1);
-                        /* TODO: should we sanity check res->sz? */
-                        if (out_size != NULL) {
-                            *out_size = res->sz;
-                        }
-                        if (out != NULL) {
-                            memcpy(out, res_out, res->sz);
-                        }
-                        WH_DEBUG_VERBOSE_HEXDUMP("[client] Eccdh:", res_out, res->sz);
-                    }
-                }
             }
         }
         else {
@@ -1824,13 +2035,101 @@ int wh_Client_EccSharedSecret(whClientContext* ctx, ecc_key* priv_key,
 }
 
 
+int wh_Client_EccSignRequest(whClientContext* ctx, whKeyId keyId,
+                             const uint8_t* hash, uint16_t hash_len)
+{
+    whMessageCrypto_EccSignRequest* req     = NULL;
+    uint8_t*                        dataPtr = NULL;
+    size_t                          req_len;
+
+    if ((ctx == NULL) || ((hash == NULL) && (hash_len > 0))) {
+        return WH_ERROR_BADARGS;
+    }
+    if (WH_KEYID_ISERASED(keyId)) {
+        return WH_ERROR_BADARGS;
+    }
+
+    req_len =
+        sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) + hash_len;
+    if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
+        return WH_ERROR_BADARGS;
+    }
+
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    req = (whMessageCrypto_EccSignRequest*)_createCryptoRequest(
+        dataPtr, WC_PK_TYPE_ECDSA_SIGN, ctx->cryptoAffinity);
+
+    memset(req, 0, sizeof(*req));
+    req->options = 0;
+    req->keyId   = keyId;
+    req->sz      = hash_len;
+    if ((hash != NULL) && (hash_len > 0)) {
+        memcpy((uint8_t*)(req + 1), hash, hash_len);
+    }
+
+    return wh_Client_SendRequest(ctx, WH_MESSAGE_GROUP_CRYPTO, WC_ALGO_TYPE_PK,
+                                 (uint16_t)req_len, dataPtr);
+}
+
+int wh_Client_EccSignResponse(whClientContext* ctx, uint8_t* sig,
+                              uint16_t* inout_sig_len)
+{
+    int                              ret;
+    uint16_t                         group;
+    uint16_t                         action;
+    uint16_t                         res_len = 0;
+    uint8_t*                         dataPtr;
+    whMessageCrypto_EccSignResponse* res = NULL;
+
+    if ((ctx == NULL) || ((sig != NULL) && (inout_sig_len == NULL))) {
+        return WH_ERROR_BADARGS;
+    }
+
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len, dataPtr);
+    if (ret != WH_ERROR_OK) {
+        return ret;
+    }
+
+    ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_ECDSA_SIGN, (uint8_t**)&res);
+    if (ret >= 0) {
+        uint8_t*     res_sig = (uint8_t*)(res + 1);
+        const size_t hdr_sz =
+            sizeof(whMessageCrypto_GenericResponseHeader) + sizeof(*res);
+        /* Defensive bound: res->sz must fit within the actual received frame */
+        if (res_len < hdr_sz || res->sz > (res_len - hdr_sz)) {
+            return WH_ERROR_ABORTED;
+        }
+        if (inout_sig_len != NULL) {
+            if ((sig != NULL) && (res->sz > *inout_sig_len)) {
+                /* Output buffer too small. Report required size and fail
+                 * rather than silently truncating signature bytes. */
+                *inout_sig_len = res->sz;
+                return WH_ERROR_BUFFER_SIZE;
+            }
+            *inout_sig_len = res->sz;
+            if ((sig != NULL) && (res->sz > 0)) {
+                memcpy(sig, res_sig, res->sz);
+            }
+        }
+    }
+    return ret;
+}
+
 int wh_Client_EccSign(whClientContext* ctx, ecc_key* key, const uint8_t* hash,
                       uint16_t hash_len, uint8_t* sig, uint16_t* inout_sig_len)
 {
-    int                              ret     = 0;
-    whMessageCrypto_EccSignRequest*  req     = NULL;
-    whMessageCrypto_EccSignResponse* res     = NULL;
-    uint8_t*                         dataPtr = NULL;
+    int                             ret     = 0;
+    whMessageCrypto_EccSignRequest* req     = NULL;
+    uint8_t*                        dataPtr = NULL;
 
     /* Transaction state */
     whKeyId key_id;
@@ -1913,40 +2212,10 @@ int wh_Client_EccSign(whClientContext* ctx, ecc_key* key, const uint8_t* hash,
                 /* Server will evict at this point. Reset evict */
                 evict = 0;
 
-                /* Response Message */
-                uint16_t res_len = 0;
-
-                /* Recv Response */
+                /* Poll shared Response */
                 do {
-                    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
-                                                 (uint8_t*)dataPtr);
+                    ret = wh_Client_EccSignResponse(ctx, sig, inout_sig_len);
                 } while (ret == WH_ERROR_NOTREADY);
-
-                if (ret == WH_ERROR_OK) {
-                    /* Get response structure pointer, validates generic header
-                     * rc */
-                    ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_ECDSA_SIGN,
-                                             (uint8_t**)&res);
-                    /* wolfCrypt allows positive error codes on success in some
-                     * scenarios */
-                    if (ret >= 0) {
-                        uint8_t* res_sig = (uint8_t*)(res + 1);
-                        uint16_t sig_len = res->sz;
-                        /* check inoutlen and read out */
-                        if (inout_sig_len != NULL) {
-                            if (sig_len > *inout_sig_len) {
-                                /* Silently truncate the signature */
-                                sig_len = *inout_sig_len;
-                            }
-                            *inout_sig_len = sig_len;
-                            if ((sig != NULL) && (sig_len > 0)) {
-                                memcpy(sig, res_sig, sig_len);
-                            }
-                            WH_DEBUG_VERBOSE_HEXDUMP("[client] EccSign:", res_sig,
-                                             sig_len);
-                        }
-                    }
-                }
             }
         }
         else {
@@ -1962,14 +2231,101 @@ int wh_Client_EccSign(whClientContext* ctx, ecc_key* key, const uint8_t* hash,
     return ret;
 }
 
+int wh_Client_EccVerifyRequest(whClientContext* ctx, whKeyId keyId,
+                               const uint8_t* sig, uint16_t sig_len,
+                               const uint8_t* hash, uint16_t hash_len)
+{
+    whMessageCrypto_EccVerifyRequest* req     = NULL;
+    uint8_t*                          dataPtr = NULL;
+    size_t                            req_len;
+
+    if ((ctx == NULL) || ((sig == NULL) && (sig_len > 0)) ||
+        ((hash == NULL) && (hash_len > 0))) {
+        return WH_ERROR_BADARGS;
+    }
+    if (WH_KEYID_ISERASED(keyId)) {
+        return WH_ERROR_BADARGS;
+    }
+
+    req_len = sizeof(whMessageCrypto_GenericRequestHeader) + sizeof(*req) +
+              sig_len + hash_len;
+    if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
+        return WH_ERROR_BADARGS;
+    }
+
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    req = (whMessageCrypto_EccVerifyRequest*)_createCryptoRequest(
+        dataPtr, WC_PK_TYPE_ECDSA_VERIFY, ctx->cryptoAffinity);
+
+    memset(req, 0, sizeof(*req));
+    req->options = 0;
+    req->keyId   = keyId;
+    req->sigSz   = sig_len;
+    req->hashSz  = hash_len;
+    if ((sig != NULL) && (sig_len > 0)) {
+        memcpy((uint8_t*)(req + 1), sig, sig_len);
+    }
+    if ((hash != NULL) && (hash_len > 0)) {
+        memcpy((uint8_t*)(req + 1) + sig_len, hash, hash_len);
+    }
+
+    return wh_Client_SendRequest(ctx, WH_MESSAGE_GROUP_CRYPTO, WC_ALGO_TYPE_PK,
+                                 (uint16_t)req_len, dataPtr);
+}
+
+int wh_Client_EccVerifyResponse(whClientContext* ctx, ecc_key* opt_key,
+                                int* out_res)
+{
+    int                                ret;
+    uint16_t                           group;
+    uint16_t                           action;
+    uint16_t                           res_len = 0;
+    uint8_t*                           dataPtr;
+    whMessageCrypto_EccVerifyResponse* res = NULL;
+
+    if ((ctx == NULL) || (out_res == NULL)) {
+        return WH_ERROR_BADARGS;
+    }
+
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len, dataPtr);
+    if (ret != WH_ERROR_OK) {
+        return ret;
+    }
+
+    ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_ECDSA_VERIFY, (uint8_t**)&res);
+    if (ret >= 0) {
+        const size_t hdr_sz =
+            sizeof(whMessageCrypto_GenericResponseHeader) + sizeof(*res);
+        /* Defensive bound: res->pubSz must fit within the actual received
+         * frame */
+        if (res_len < hdr_sz || res->pubSz > (res_len - hdr_sz)) {
+            return WH_ERROR_ABORTED;
+        }
+        *out_res = res->res;
+        if ((opt_key != NULL) && (res->pubSz > 0)) {
+            ret = wh_Crypto_EccUpdatePrivateOnlyKeyDer(opt_key, res->pubSz,
+                                                       (uint8_t*)(res + 1));
+        }
+    }
+    return ret;
+}
+
 int wh_Client_EccVerify(whClientContext* ctx, ecc_key* key, const uint8_t* sig,
                         uint16_t sig_len, const uint8_t* hash,
                         uint16_t hash_len, int* out_res)
 {
-    int                                ret     = 0;
-    whMessageCrypto_EccVerifyRequest*  req     = NULL;
-    whMessageCrypto_EccVerifyResponse* res     = NULL;
-    uint8_t*                           dataPtr = NULL;
+    int                               ret     = 0;
+    whMessageCrypto_EccVerifyRequest* req     = NULL;
+    uint8_t*                          dataPtr = NULL;
 
     /* Transaction state */
     whKeyId key_id;
@@ -1981,8 +2337,10 @@ int wh_Client_EccVerify(whClientContext* ctx, ecc_key* key, const uint8_t* sig,
            "out_res:%p\n",
            ctx, key, sig, sig_len, hash, hash_len, out_res);
 
+    /* Validate response-side args upfront so we never send a request that the
+     * matching *Response would then reject without consuming the reply. */
     if ((ctx == NULL) || (key == NULL) || ((sig == NULL) && (sig_len > 0)) ||
-        ((hash == NULL) && (hash_len > 0))) {
+        ((hash == NULL) && (hash_len > 0)) || (out_res == NULL)) {
         return WH_ERROR_BADARGS;
     }
 
@@ -2067,33 +2425,14 @@ int wh_Client_EccVerify(whClientContext* ctx, ecc_key* key, const uint8_t* sig,
             if (ret == WH_ERROR_OK) {
                 /* Server will evict at this point. Reset evict */
                 evict = 0;
-                /* Response Message */
-                uint16_t res_len = 0;
 
-                /* Recv Response */
+                /* Poll shared Response. When EXPORTPUB was requested, the
+                 * Response updates the caller's key with the server-derived
+                 * public half. */
                 do {
-                    ret = wh_Client_RecvResponse(ctx, &group, &action, &res_len,
-                                                 (uint8_t*)dataPtr);
+                    ret = wh_Client_EccVerifyResponse(
+                        ctx, (export_pub_key != 0) ? key : NULL, out_res);
                 } while (ret == WH_ERROR_NOTREADY);
-                if (ret == WH_ERROR_OK) {
-                    /* Get response structure pointer, validates generic header
-                     * rc */
-                    ret = _getCryptoResponse(dataPtr, WC_PK_TYPE_ECDSA_VERIFY,
-                                             (uint8_t**)&res);
-                    /* wolfCrypt allows positive error codes on success in some
-                     * scenarios */
-                    if (ret >= 0) {
-                        uint32_t res_der_size = 0;
-                        *out_res              = res->res;
-                        res_der_size          = res->pubSz;
-                        if (res_der_size > 0) {
-                            uint8_t* res_pub_der = (uint8_t*)(res + 1);
-                            /* Update the key with the generated public key */
-                            ret = wh_Crypto_EccUpdatePrivateOnlyKeyDer(
-                                key, res_der_size, res_pub_der);
-                        }
-                    }
-                }
             }
         }
         else {

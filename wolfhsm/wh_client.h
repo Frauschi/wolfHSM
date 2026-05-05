@@ -110,11 +110,21 @@ typedef struct {
     uint64_t  ioSz;
 } whClientDmaAsyncSha;
 
+/* Per-operation async DMA context for RNG: stores the translated output DMA
+ * address that must survive across the Request/Response boundary for POST
+ * cleanup of the client's output buffer. */
+typedef struct {
+    uintptr_t outAddr;
+    uintptr_t clientAddr;
+    uint64_t  outSz;
+} whClientDmaAsyncRng;
+
 /* Async DMA context union. Only one DMA request can be in flight at a time
  * per client context, so a single union suffices. Each Response function
  * knows which member to access based on its own operation type. */
 typedef union {
     whClientDmaAsyncSha sha;
+    whClientDmaAsyncRng rng;
 } whClientDmaAsyncCtx;
 
 typedef struct {

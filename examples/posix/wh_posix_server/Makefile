@@ -28,8 +28,14 @@ INC =   -I$(PROJECT_DIR) \
 # POSIX requires C source be defined before any header
 DEF += -D_POSIX_C_SOURCE=200809L
 
-# Library configuration defines for user-supplied settings
-DEF += -DWOLFSSL_USER_SETTINGS -DWOLFHSM_CFG
+# Library configuration defines for user-supplied settings.
+# When linking against an installed wolfSSL (WOLFSSL_LIB=1), skip
+# WOLFSSL_USER_SETTINGS so the installed library's compiled-in options.h
+# is used instead.
+DEF += -DWOLFHSM_CFG
+ifneq ($(WOLFSSL_LIB),1)
+DEF += -DWOLFSSL_USER_SETTINGS
+endif
 
 
 # Architecture flags for assembler, C compiler and linker
@@ -113,9 +119,18 @@ SRC_ASM +=
 
 # wolfCrypt source files
 ifneq ($(NOCRYPTO),1)
+ifeq ($(WOLFSSL_LIB),1)
+# Link against an installed wolfSSL library instead of compiling sources.
+# Set WOLFSSL_LIBDIR for a non-default install path.
+LIBS += -lwolfssl
+ifneq ($(WOLFSSL_LIBDIR),)
+LDFLAGS += -L$(WOLFSSL_LIBDIR)
+endif
+else
 SRC_C += $(wildcard $(WOLFSSL_DIR)/wolfcrypt/src/*.c)
 # wolfSSL source files
 SRC_C += $(wildcard $(WOLFSSL_DIR)/src/*.c)
+endif
 else
 DEF += -DWOLFHSM_CFG_NO_CRYPTO
 endif

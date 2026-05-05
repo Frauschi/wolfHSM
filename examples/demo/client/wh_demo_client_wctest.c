@@ -1,7 +1,7 @@
 #include "wolfhsm/wh_client.h"
 #include "wolfhsm/wh_error.h"
 
-#if !defined(WOLFHSM_CFG_NO_CRYPTO)
+#if !defined(WOLFHSM_CFG_NO_CRYPTO) && defined(WH_DEMO_WCTEST)
 #include "wolfcrypt/test/test.h"
 #endif
 
@@ -10,7 +10,7 @@
 int wh_DemoClient_wcTest(whClientContext* clientContext)
 {
     (void)clientContext;
-#if !defined(WOLFHSM_CFG_NO_CRYPTO)
+#if !defined(WOLFHSM_CFG_NO_CRYPTO) && defined(WH_DEMO_WCTEST)
     return wolfcrypt_test(NULL);
 #else
     return WH_ERROR_NOTIMPL;

@@ -416,6 +416,130 @@ int wh_Client_Sha256Dma(whClientContext* ctx, wc_Sha256* sha, const uint8_t* in,
 | **`requestSent` flag** | Adds a parameter to the API, but avoids unnecessary round-trips when input is absorbed entirely into the local buffer |
 | **Snapshot/rollback on send failure** | Small CPU cost to copy the partial buffer, but guarantees SHA state consistency even on transport failures |
 
+
+
+## RNG: Single-Shot with Caller-Driven Chunking
+
+The RNG generate operation is the second algorithm to receive the async
+treatment.  Unlike SHA, RNG is **single-shot** -- there is no intermediate
+state to carry, no partial-block buffering, and no multi-call Init/Update/Final
+sequence.  Each Request asks for N random bytes and the matching Response
+delivers them.
+
+RNG is still interesting because the existing blocking API silently chunks
+large requests into multiple round-trips when the caller asks for more bytes
+than fit in one comm-buffer message.  The async split has to decide where
+that chunking logic lives.
+
+### Chunking Policy
+
+The async Request/Response pair is **single-shot per call**: one Request
+produces one Response.  Callers requesting more bytes than fit in a single
+inline message must loop themselves.  The per-call inline cap is exposed as:
+
+```c
+#define WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ                    \
+    (WOLFHSM_CFG_COMM_DATA_LEN -                               \
+     (uint32_t)sizeof(whMessageCrypto_GenericResponseHeader) - \
+     (uint32_t)sizeof(whMessageCrypto_RngResponse))
+```
+
+Requests exceeding this cap (or of size zero) are rejected with
+`WH_ERROR_BADARGS` before any bytes hit the wire.
+
+The existing blocking `wh_Client_RngGenerate()` function is retained as a
+thin wrapper that chunks internally against the cap, so application code
+using the wolfCrypt RNG callback path continues to work without changes:
+
+```c
+int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size)
+{
+    while (remaining > 0) {
+        uint32_t chunk = min(remaining, WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ);
+        uint32_t got   = chunk;
+        wh_Client_RngGenerateRequest(ctx, chunk);
+        do {
+            ret = wh_Client_RngGenerateResponse(ctx, out, &got);
+        } while (ret == WH_ERROR_NOTREADY);
+        out += got; remaining -= got;
+    }
+}
+```
+
+This keeps the async primitives predictable (each call is bounded by a single
+round trip) and pushes the scheduling decision -- "when should I yield
+between chunks?" -- up to the async caller, who is the only one with enough
+context to answer it.
+
+### Response Size Negotiation
+
+The Response function takes an `inout_size` parameter: on entry it is the
+capacity of the output buffer; on exit it is the actual number of bytes the
+server wrote.  This lets the caller distinguish short reads from bugs:
+
+```c
+uint32_t got = requested;
+ret = wh_Client_RngGenerateResponse(ctx, out, &got);
+/* got may be < requested if the server returned a shorter reply */
+```
+
+If the server somehow returns more bytes than the caller's buffer can hold
+(should not happen, but defended against), the Response returns
+`WH_ERROR_ABORTED` instead of overflowing.
+
+### DMA Variant
+
+The DMA variant bypasses the comm buffer entirely for the data payload: the
+server writes random bytes directly into the client's output buffer via
+translated DMA addresses.  The Request/Response split introduces the same
+address-stashing pattern used by SHA DMA:
+
+```c
+typedef struct {
+    uintptr_t outAddr;     /* translated DMA address */
+    uintptr_t clientAddr;  /* original client address (for POST) */
+    uint64_t  outSz;       /* DMA'd size (0 means "nothing to clean up") */
+} whClientDmaAsyncRng;
+```
+
+Stored in `whClientContext.dma.asyncCtx.rng`, this context carries the
+translated address across the Request/Response boundary so the Response can
+perform the matching POST cleanup.
+
+Two points worth calling out:
+
+- **Fail-fast on occupied transport**: the DMA Request checks
+  `wh_CommClient_IsRequestPending()` *before* acquiring the DMA mapping.
+  Without this check, a request that would be rejected by `SendRequest` would
+  still leave a leaked DMA mapping behind, because the Response (which
+  normally releases the mapping) would never run.
+- **POST runs on every non-NOTREADY exit**: once the Response receives a
+  reply -- success or otherwise -- it performs the POST cleanup
+  unconditionally, so the client buffer is safe to read regardless of the
+  final return code.
+
+Unlike the non-DMA variant, the DMA variant has no per-call size cap: the
+server writes directly to client memory, so a single DMA call can fulfill
+arbitrarily large requests.
+
+### API Reference
+
+```c
+/* Non-DMA */
+int wh_Client_RngGenerateRequest(whClientContext* ctx, uint32_t size);
+int wh_Client_RngGenerateResponse(whClientContext* ctx, uint8_t* out,
+                                  uint32_t* inout_size);
+
+/* DMA (requires WOLFHSM_CFG_DMA) */
+int wh_Client_RngGenerateDmaRequest(whClientContext* ctx, uint8_t* out,
+                                    uint32_t size);
+int wh_Client_RngGenerateDmaResponse(whClientContext* ctx);
+
+/* Blocking (unchanged; now wraps the async primitives and chunks internally) */
+int wh_Client_RngGenerate(whClientContext* ctx, uint8_t* out, uint32_t size);
+int wh_Client_RngGenerateDma(whClientContext* ctx, uint8_t* out, uint32_t size);
+```
+
 ## Roadmap: Remaining Algorithms
 
 The async split pattern will be applied algorithm by algorithm to all crypto
@@ -430,6 +554,7 @@ the full set of operations and their planned async status.
 | SHA-224        | Update/Final Request/Response    | Shares SHA-256 wire format |
 | SHA-384        | Update/Final Request/Response    | Shares SHA-512 wire format |
 | SHA-512        | Update/Final Request/Response    | Non-DMA and DMA variants |
+| RNG Generate   | `wh_Client_RngGenerate{Request,Response}` and DMA variants | Single-shot per call; non-DMA callers chunk against `WH_MESSAGE_CRYPTO_RNG_MAX_INLINE_SZ`, DMA has no per-call cap |
 
 **Planned:**
 
@@ -450,7 +575,6 @@ the full set of operations and their planned async status.
 | CMAC              | `wh_Client_Cmac{Request,Response}`         | Low        | Already has partial split pattern |
 | ML-DSA Sign       | `wh_Client_MlDsaSign{Request,Response}`    | Low        | Post-quantum; single-shot |
 | ML-DSA Verify     | `wh_Client_MlDsaVerify{Request,Response}`  | Low        | Post-quantum; single-shot |
-| RNG Generate      | `wh_Client_RngGenerate{Request,Response}`  | Medium     | Chunking needed for large requests; async callers must handle chunking themselves |
 
 Most remaining algorithms are **single-shot** operations (one request, one
 response) and are straightforward to split compared to SHA's streaming

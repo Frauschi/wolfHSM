@@ -50,12 +50,30 @@ LIBS = \
 LIB_DIRS =
 
 CFLAGS = -Wall $(INCLUDE_DIRS)
-CFLAGS += -DWOLFSSL_USER_SETTINGS -DWOLFHSM_CFG_ENABLE_SERVER -DWOLFHSM_CFG_NO_SYS_TIME
+CFLAGS += -DWOLFHSM_CFG_ENABLE_SERVER -DWOLFHSM_CFG_NO_SYS_TIME
 CFLAGS += -std=c90 -D_GNU_SOURCE -Wno-cpp
 
+# When linking against an installed wolfSSL (WOLFSSL_LIB=1), skip
+# WOLFSSL_USER_SETTINGS so the installed library's compiled-in options.h
+# is used instead.
+ifneq ($(WOLFSSL_LIB),1)
+CFLAGS += -DWOLFSSL_USER_SETTINGS
+endif
+
 ifneq ($(NOCRYPTO),1)
+ifeq ($(WOLFSSL_LIB),1)
+# Link against an installed wolfSSL library instead of compiling sources.
+# Set WOLFSSL_LIBDIR for a non-default install path. NO_INLINE keeps the
+# installed wolfSSL headers C90-clean.
+LIBS += -lwolfssl
+CFLAGS += -DNO_INLINE
+ifneq ($(WOLFSSL_LIBDIR),)
+LIB_DIRS += -L$(WOLFSSL_LIBDIR)
+endif
+else
 SRC += \
 	$(WOLFCRYPT_SRC)
+endif
 else
 CFLAGS += -DWOLFHSM_CFG_NO_CRYPTO
 endif
