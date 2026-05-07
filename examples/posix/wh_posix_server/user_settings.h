@@ -131,7 +131,6 @@ extern "C" {
 
 /* Dilithium Options */
 #define HAVE_DILITHIUM
-#define WOLFSSL_WC_DILITHIUM /* use wolfCrypt implementation, not libOQS */
 #define WOLFSSL_SHA3
 #define WOLFSSL_SHAKE128
 #define WOLFSSL_SHAKE256
@@ -153,7 +152,6 @@ extern "C" {
 
 /* ML-KEM Options */
 #define WOLFSSL_HAVE_MLKEM
-#define WOLFSSL_WC_MLKEM
 
 /** Composite features */
 #define HAVE_HKDF
