@@ -376,8 +376,24 @@ static int _HandleRsaKeyGen(whServerContext* ctx, uint16_t magic, int devId,
                 }
                 WH_DEBUG_SERVER_VERBOSE("RsaKeyGen CacheKeyRsa: keyId:%u, ret:%d\n", key_id, ret);
                 if (ret == 0) {
+                    /* Export the public key into the response body so the
+                     * client gets it without a separate ExportPublicKey call.
+                     * A freshly generated key must serialize, so treat a
+                     * failure as fatal: evict the just-committed key and
+                     * propagate the error rather than returning a keyId with no
+                     * public key. */
+                    int pub_ret = wc_RsaKeyToPublicDer(rsa, out, max_size);
+                    if (pub_ret > 0) {
+                        der_size = (uint16_t)pub_ret;
+                    }
+                    else {
+                        (void)wh_Server_KeystoreEvictKey(ctx, key_id);
+                        ret = (pub_ret < 0) ? pub_ret : WH_ERROR_ABORTED;
+                    }
+                }
+                if (ret == 0) {
                     res.keyId = wh_KeyId_TranslateToClient(key_id);
-                    res.len   = 0;
+                    res.len   = der_size;
                 }
             }
         }
