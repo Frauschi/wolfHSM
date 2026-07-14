@@ -2082,6 +2082,9 @@ static int _HandleCurve25519KeyGen(whServerContext* ctx, uint16_t magic,
                 ret    = wh_Crypto_Curve25519SerializeKey(key, out, &ser_size);
             }
             else {
+                uint16_t max_size =
+                    (uint16_t)(WOLFHSM_CFG_COMM_DATA_LEN -
+                               (out - (uint8_t*)cryptoDataOut));
                 ser_size = 0;
                 /* Must import the key into the cache and return keyid */
                 if (WH_KEYID_ISERASED(key_id)) {
@@ -2102,6 +2105,23 @@ static int _HandleCurve25519KeyGen(whServerContext* ctx, uint16_t magic,
                 }
                 WH_DEBUG_SERVER_VERBOSE("CacheImport: keyId:%u, ret:%d\n",
                        key_id, ret);
+                if (ret == 0) {
+                    /* Export the public key into the response body so the
+                     * client gets it without a separate ExportPublicKey call.
+                     * A freshly generated key must serialize, so treat a
+                     * failure as fatal: evict the just-committed key and
+                     * propagate the error rather than returning a keyId with no
+                     * public key. */
+                    int pub_ret =
+                        wc_Curve25519PublicKeyToDer(key, out, max_size, 1);
+                    if (pub_ret > 0) {
+                        ser_size = (uint16_t)pub_ret;
+                    }
+                    else {
+                        (void)wh_Server_KeystoreEvictKey(ctx, key_id);
+                        ret = (pub_ret < 0) ? pub_ret : WH_ERROR_ABORTED;
+                    }
+                }
             }
         }
         wc_curve25519_free(key);
