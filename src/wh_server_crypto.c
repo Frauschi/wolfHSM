@@ -1217,13 +1217,6 @@ static int _HandleEccKeyGen(whServerContext* ctx, uint16_t magic, int devId,
                 key_id = WH_KEYID_ERASED;
                 ret    = wh_Crypto_EccSerializeKeyDer(key, max_size, res_out,
                                                       &res_size);
-                /* TODO: RSA has the following, should we do the same? */
-                /*
-                if (ret == 0) {
-                    res.keyId = 0;
-                    res.len = res_size;
-                }
-                */
             }
             else {
                 /* Must import the key into the cache and return keyid
@@ -1244,11 +1237,23 @@ static int _HandleEccKeyGen(whServerContext* ctx, uint16_t magic, int devId,
                                                       label_size, label);
                 }
                 WH_DEBUG_SERVER("CacheImport: keyId:%u, ret:%d\n", key_id, ret);
-                /* TODO: RSA has the following, should we do the same? */
-                /*
-                res.keyId = WH_KEYID_ID(key_id);
-                res.len = 0;
-                */
+                if (ret == 0) {
+                    /* Export the public key into the response body so the
+                     * client gets it without a separate ExportPublicKey call.
+                     * A freshly generated key must serialize, so treat a
+                     * failure as fatal: evict the just-committed key and
+                     * propagate the error rather than returning a keyId with no
+                     * public key. */
+                    int pub_ret =
+                        wc_EccPublicKeyToDer(key, res_out, max_size, 1);
+                    if (pub_ret > 0) {
+                        res_size = (uint16_t)pub_ret;
+                    }
+                    else {
+                        (void)wh_Server_KeystoreEvictKey(ctx, key_id);
+                        ret = (pub_ret < 0) ? pub_ret : WH_ERROR_ABORTED;
+                    }
+                }
             }
         }
         wc_ecc_free(key);
