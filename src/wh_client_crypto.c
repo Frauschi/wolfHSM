@@ -139,11 +139,11 @@ static int _MlDsaMakeKeyDma(whClientContext* ctx, int level,
 #ifdef WOLFSSL_HAVE_MLKEM
 static int _MlKemMakeKey(whClientContext* ctx, int level,
                          whKeyId* inout_key_id, whNvmFlags flags,
-                         uint16_t label_len, uint8_t* label, MlKemKey* key);
+                         uint16_t label_len, const uint8_t* label, MlKemKey* key);
 #ifdef WOLFHSM_CFG_DMA
 static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
                             whKeyId* inout_key_id, whNvmFlags flags,
-                            uint16_t label_len, uint8_t* label, MlKemKey* key);
+                            uint16_t label_len, const uint8_t* label, MlKemKey* key);
 #endif /* WOLFHSM_CFG_DMA */
 #endif /* WOLFSSL_HAVE_MLKEM */
 
@@ -10759,7 +10759,7 @@ int wh_Client_MlKemExportPublicKey(whClientContext* ctx, whKeyId keyId,
 
 static int _MlKemMakeKey(whClientContext* ctx, int level,
                          whKeyId* inout_key_id, whNvmFlags flags,
-                         uint16_t label_len, uint8_t* label, MlKemKey* key)
+                         uint16_t label_len, const uint8_t* label, MlKemKey* key)
 {
     int                                  ret     = WH_ERROR_OK;
     whKeyId                              key_id  = WH_KEYID_ERASED;
@@ -10836,7 +10836,10 @@ static int _MlKemMakeKey(whClientContext* ctx, int level,
         }
         if (key != NULL) {
             wh_Client_MlKemSetKeyId(key, key_id);
-            if ((flags & WH_NVM_FLAGS_EPHEMERAL) != 0) {
+            /* Response carries the exported key (EPHEMERAL) or the public key
+             * (cached keygen). An empty body means the caller requested key
+             * material the server did not return. */
+            if (res->len > 0) {
                 uint8_t*     key_raw = (uint8_t*)(res + 1);
                 const size_t hdr_sz  =
                     sizeof(whMessageCrypto_GenericResponseHeader) +
@@ -10848,6 +10851,9 @@ static int _MlKemMakeKey(whClientContext* ctx, int level,
                     ret = wh_Crypto_MlKemDeserializeKey(
                         key_raw, (uint16_t)res->len, key);
                 }
+            }
+            else {
+                ret = WH_ERROR_ABORTED;
             }
         }
     }
@@ -10864,6 +10870,45 @@ int wh_Client_MlKemMakeCacheKey(whClientContext* ctx, int level,
 
     return _MlKemMakeKey(ctx, level, inout_key_id, flags, label_len,
                          label, NULL);
+}
+
+int wh_Client_MlKemMakeCacheKeyAndExportPublic(whClientContext* ctx, int level,
+                                               whKeyId* inout_key_id,
+                                               whNvmFlags flags,
+                                               uint16_t label_len,
+                                               const uint8_t* label,
+                                               MlKemKey* pub)
+{
+    int     ret;
+    whKeyId in_keyId;
+
+    if ((ctx == NULL) || (inout_key_id == NULL) || (pub == NULL)) {
+        return WH_ERROR_BADARGS;
+    }
+
+    /* Ephemeral keygen belongs to the export path, not the cache path. */
+    if (flags & WH_NVM_FLAGS_EPHEMERAL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    in_keyId = *inout_key_id;
+    ret = _MlKemMakeKey(ctx, level, inout_key_id, flags, label_len, label, pub);
+    if (ret >= 0) {
+        /* Stamp the cached keyId and the client's HSM devId so pub is
+         * immediately usable as a handle to the cached private key. The keyId
+         * is set here (not only inside _MlKemMakeKey) because a public-key
+         * deserialize that retries parameter sets can re-init pub and clear
+         * it. */
+        wh_Client_MlKemSetKeyId(pub, *inout_key_id);
+        pub->devId = WH_CLIENT_DEVID(ctx);
+    }
+    else if (WH_KEYID_ISERASED(in_keyId) && !WH_KEYID_ISERASED(*inout_key_id)) {
+        /* The server auto-assigned and committed a key but the export failed.
+         * Roll back so the operation is atomic and no cache slot is orphaned. */
+        (void)wh_Client_KeyEvict(ctx, *inout_key_id);
+        *inout_key_id = WH_KEYID_ERASED;
+    }
+    return ret;
 }
 
 int wh_Client_MlKemMakeExportKey(whClientContext* ctx, int level,
@@ -11210,7 +11255,7 @@ int wh_Client_MlKemExportPublicKeyDma(whClientContext* ctx, whKeyId keyId,
 
 static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
                             whKeyId* inout_key_id, whNvmFlags flags,
-                            uint16_t label_len, uint8_t* label, MlKemKey* key)
+                            uint16_t label_len, const uint8_t* label, MlKemKey* key)
 {
     int                                     ret = WH_ERROR_OK;
     whKeyId                                 key_id = WH_KEYID_ERASED;
@@ -11295,16 +11340,22 @@ static int _MlKemMakeKeyDma(whClientContext* ctx, int level,
             }
             if (key != NULL) {
                 wh_Client_MlKemSetKeyId(key, key_id);
-                if ((flags & WH_NVM_FLAGS_EPHEMERAL) != 0) {
-                    if (res->keySize > buffer_len) {
-                        ret = WH_ERROR_BADARGS;
-                    }
-                    else {
-                        ret = wh_Crypto_MlKemDeserializeKey(
-                            buffer, (uint16_t)res->keySize, key);
-                    }
+                /* buffer holds the exported key (EPHEMERAL) or the public key
+                 * (cached keygen); keySize bounds the DMA write. An empty result
+                 * means the caller requested key material the server did not
+                 * return. */
+                if (res->keySize == 0) {
+                    ret = WH_ERROR_ABORTED;
+                }
+                else if (res->keySize > buffer_len) {
+                    ret = WH_ERROR_BADARGS;
+                }
+                else {
+                    ret = wh_Crypto_MlKemDeserializeKey(
+                        buffer, (uint16_t)res->keySize, key);
                 }
             }
+
         }
     }
 
@@ -11321,6 +11372,44 @@ int wh_Client_MlKemMakeExportKeyDma(whClientContext* ctx, int level,
 
     return _MlKemMakeKeyDma(ctx, level, NULL, WH_NVM_FLAGS_EPHEMERAL, 0, NULL,
                             key);
+}
+
+int wh_Client_MlKemMakeCacheKeyDma(whClientContext* ctx, int level,
+                                   whKeyId* inout_key_id, whNvmFlags flags,
+                                   uint16_t label_len, const uint8_t* label,
+                                   MlKemKey* pub)
+{
+    int     ret;
+    whKeyId in_keyId;
+
+    if ((ctx == NULL) || (inout_key_id == NULL) || (pub == NULL)) {
+        return WH_ERROR_BADARGS;
+    }
+
+    /* Ephemeral keygen belongs to the export path, not the cache path. */
+    if (flags & WH_NVM_FLAGS_EPHEMERAL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    in_keyId = *inout_key_id;
+    ret = _MlKemMakeKeyDma(ctx, level, inout_key_id, flags, label_len, label,
+                           pub);
+    if (ret >= 0) {
+        /* Stamp the cached keyId and the client's HSM devId so pub is
+         * immediately usable as a handle to the cached private key. The keyId
+         * is set here (not only inside _MlKemMakeKeyDma) because a public-key
+         * deserialize that retries parameter sets can re-init pub and clear
+         * it. */
+        wh_Client_MlKemSetKeyId(pub, *inout_key_id);
+        pub->devId = WH_CLIENT_DEVID(ctx);
+    }
+    else if (WH_KEYID_ISERASED(in_keyId) && !WH_KEYID_ISERASED(*inout_key_id)) {
+        /* The server auto-assigned and committed a key but the export failed.
+         * Roll back so the operation is atomic and no cache slot is orphaned. */
+        (void)wh_Client_KeyEvict(ctx, *inout_key_id);
+        *inout_key_id = WH_KEYID_ERASED;
+    }
+    return ret;
 }
 
 int wh_Client_MlKemEncapsulateDma(whClientContext* ctx, MlKemKey* key,
