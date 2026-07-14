@@ -2338,6 +2338,23 @@ static int _HandleEd25519KeyGen(whServerContext* ctx, uint16_t magic, int devId,
                     ret = wh_Server_CacheImportEd25519Key(
                         ctx, key, key_id, flags, label_size, label);
                 }
+                if (ret == 0) {
+                    /* Export the public key into the response body so the
+                     * client gets it without a separate ExportPublicKey call.
+                     * A freshly generated key must serialize, so treat a
+                     * failure as fatal: evict the just-committed key and
+                     * propagate the error rather than returning a keyId with no
+                     * public key. */
+                    int pub_ret =
+                        wc_Ed25519PublicKeyToDer(key, res_out, max_size, 1);
+                    if (pub_ret > 0) {
+                        ser_size = (uint16_t)pub_ret;
+                    }
+                    else {
+                        (void)wh_Server_KeystoreEvictKey(ctx, key_id);
+                        ret = (pub_ret < 0) ? pub_ret : WH_ERROR_ABORTED;
+                    }
+                }
             }
         }
         wc_ed25519_free(key);
