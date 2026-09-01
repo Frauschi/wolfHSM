@@ -159,6 +159,16 @@ int wh_Client_CryptoCbStd(int devId, wc_CryptoInfo* info, void* inCtx)
             uint32_t len        = info->cipher.aescbc.sz;
             uint8_t* out        = info->cipher.aescbc.out;
 
+            /* Unavailable rather than an error, as for AES-GCM below.
+             * Mirrors wh_Client_AesCbcRequest's req_len computation. */
+            if ((uint32_t)(sizeof(whMessageCrypto_GenericRequestHeader) +
+                           sizeof(whMessageCrypto_AesCbcRequest) +
+                           len + aes->keylen + AES_IV_SIZE) >
+                (uint32_t)WOLFHSM_CFG_COMM_DATA_LEN) {
+                ret = CRYPTOCB_UNAVAILABLE;
+                break;
+            }
+
             ret = wh_Client_AesCbc(ctx, aes, enc, in, len, out);
 
         } break;
@@ -173,6 +183,16 @@ int wh_Client_CryptoCbStd(int devId, wc_CryptoInfo* info, void* inCtx)
             uint32_t       len = info->cipher.aesctr.sz;
             uint8_t*       out = info->cipher.aesctr.out;
 
+            /* Unavailable rather than an error, as for AES-GCM below.
+             * Mirrors wh_Client_AesCtrRequest's req_len computation. */
+            if ((uint32_t)(sizeof(whMessageCrypto_GenericRequestHeader) +
+                           sizeof(whMessageCrypto_AesCtrRequest) +
+                           len + aes->keylen + AES_IV_SIZE + AES_BLOCK_SIZE) >
+                (uint32_t)WOLFHSM_CFG_COMM_DATA_LEN) {
+                ret = CRYPTOCB_UNAVAILABLE;
+                break;
+            }
+
             ret = wh_Client_AesCtr(ctx, aes, enc, in, len, out);
 
         } break;
@@ -186,6 +206,16 @@ int wh_Client_CryptoCbStd(int devId, wc_CryptoInfo* info, void* inCtx)
             const uint8_t* in  = info->cipher.aesecb.in;
             uint32_t       len = info->cipher.aesecb.sz;
             uint8_t*       out = info->cipher.aesecb.out;
+
+            /* Unavailable rather than an error, as for AES-GCM below.
+             * Mirrors wh_Client_AesEcbRequest's req_len computation. */
+            if ((uint32_t)(sizeof(whMessageCrypto_GenericRequestHeader) +
+                           sizeof(whMessageCrypto_AesEcbRequest) +
+                           len + aes->keylen) >
+                (uint32_t)WOLFHSM_CFG_COMM_DATA_LEN) {
+                ret = CRYPTOCB_UNAVAILABLE;
+                break;
+            }
 
             ret = wh_Client_AesEcb(ctx, aes, enc, in, len, out);
 
