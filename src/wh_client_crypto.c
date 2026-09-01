@@ -484,7 +484,7 @@ int wh_Client_AesCtrRequest(whClientContext* ctx, Aes* aes, int enc,
               len + key_len + AES_IV_SIZE + AES_BLOCK_SIZE;
 
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
-        return WH_ERROR_BADARGS;
+        return WH_ERROR_REQUEST_SIZE;
     }
 
     req->enc    = enc;
@@ -826,7 +826,7 @@ int wh_Client_AesEcbRequest(whClientContext* ctx, Aes* aes, int enc,
               len + key_len;
 
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
-        return WH_ERROR_BADARGS;
+        return WH_ERROR_REQUEST_SIZE;
     }
 
     req->enc    = enc;
@@ -1159,7 +1159,7 @@ int wh_Client_AesCbcRequest(whClientContext* ctx, Aes* aes, int enc,
               len + key_len + iv_len;
 
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
-        return WH_ERROR_BADARGS;
+        return WH_ERROR_REQUEST_SIZE;
     }
 
     req->enc    = enc;
@@ -1507,7 +1507,7 @@ int wh_Client_AesGcmRequest(whClientContext* ctx, Aes* aes, int enc,
               len + key_len + iv_len + authin_len + ((enc == 0) ? tag_len : 0);
 
     if (req_len > WOLFHSM_CFG_COMM_DATA_LEN) {
-        return WH_ERROR_BADARGS;
+        return WH_ERROR_REQUEST_SIZE;
     }
 
     req->enc       = enc;
