@@ -227,6 +227,20 @@ int wh_Client_CryptoCbStd(int devId, wc_CryptoInfo* info, void* inCtx)
                                         info->cipher.aesgcm_dec.out :
                                         info->cipher.aesgcm_enc.out;
 
+            /* A payload the comm buffer cannot carry is not an error, so
+             * report it unavailable and let wolfCrypt fall back. The
+             * WH_ERROR_BADARGS wh_Client_AesGcm would return propagates out of
+             * wc_AesGcmDecrypt as a decrypt failure, and TLS answers that with
+             * bad_record_mac - so a legal 16 KiB record kills the connection. */
+            if ((uint32_t)(sizeof(whMessageCrypto_GenericRequestHeader) +
+                           sizeof(whMessageCrypto_AesGcmRequest) +
+                           len + aes->keylen + iv_len + authin_len +
+                           ((enc == 0) ? tag_len : 0)) >
+                (uint32_t)WOLFHSM_CFG_COMM_DATA_LEN) {
+                ret = CRYPTOCB_UNAVAILABLE;
+                break;
+            }
+
             ret = wh_Client_AesGcm(ctx, aes, enc, in, len,iv, iv_len,
                     authin, authin_len, dec_tag, enc_tag, tag_len, out);
         } break;
