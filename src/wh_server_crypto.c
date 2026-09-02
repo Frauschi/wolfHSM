@@ -4260,7 +4260,8 @@ static int _HandleAesGcmDma(whServerContext* ctx, uint16_t magic, int devId,
 
     void*  inAddr      = NULL;
     void*  outAddr     = NULL;
-    void*  aadAddr     = NULL;
+    void*  aadAddr     = NULL;   /* set only when the AAD came over DMA */
+    const uint8_t* aadPtr = NULL;
     word32 outSz       = 0;
 
     whKeyId        keyId;
@@ -4282,12 +4283,20 @@ static int _HandleAesGcmDma(whServerContext* ctx, uint16_t magic, int devId,
 
     uint32_t enc         = req.enc;
     uint32_t keyLen      = req.keySz;
+    /* What the client actually put on the wire, which is what fixes the
+     * offsets inside the request. keyLen becomes the keystore key's length
+     * below when the key is HSM-side, where the wire carries none. */
+    const uint32_t reqKeySz = req.keySz;
     uint32_t len         = req.input.sz;
     uint32_t ivLen       = req.ivSz;
     uint32_t tagLen      = req.authTagSz;
+    /* addr 0 with a non-zero size means the client sent the AAD inline,
+     * immediately after the key (see wh_Client_CryptoCbDma). */
+    int      aadInline   = ((req.aad.sz > 0) && (req.aad.addr == 0));
     uint64_t needed_size = (uint64_t)sizeof(whMessageCrypto_AesGcmDmaRequest) +
                            (uint64_t)keyLen + (uint64_t)ivLen +
-                           (uint64_t)(enc != 0 ? 0 : tagLen);
+                           (uint64_t)(enc != 0 ? 0 : tagLen) +
+                           (uint64_t)(aadInline ? req.aad.sz : 0);
     if (needed_size != inSize) {
         return WH_ERROR_BADARGS;
     }
@@ -4353,12 +4362,20 @@ static int _HandleAesGcmDma(whServerContext* ctx, uint16_t magic, int devId,
 
     /* Handle AAD */
     if (ret == WH_ERROR_OK && req.aad.sz > 0) {
-        /* Process client address for AAD */
-        ret = wh_Server_DmaProcessClientAddress(
-            ctx, req.aad.addr, &aadAddr, req.aad.sz,
-            WH_DMA_OPER_CLIENT_READ_PRE, (whServerDmaFlags){0});
-        if (ret != WH_ERROR_OK) {
-            res.dmaAddrStatus.badAddr = req.aad;
+        if (aadInline) {
+            /* Already in the request buffer, after the key. */
+            aadPtr = (const uint8_t*)(iv + ivLen + (enc != 0 ? 0 : tagLen) +
+                                      reqKeySz);
+        }
+        else {
+            /* Process client address for AAD */
+            ret = wh_Server_DmaProcessClientAddress(
+                ctx, req.aad.addr, &aadAddr, req.aad.sz,
+                WH_DMA_OPER_CLIENT_READ_PRE, (whServerDmaFlags){0});
+            if (ret != WH_ERROR_OK) {
+                res.dmaAddrStatus.badAddr = req.aad;
+            }
+            aadPtr = (const uint8_t*)aadAddr;
         }
     }
 
@@ -4386,13 +4403,13 @@ static int _HandleAesGcmDma(whServerContext* ctx, uint16_t magic, int devId,
             ret = wc_AesGcmEncrypt(
                 aes, (byte*)outAddr, (byte*)inAddr, (word32)len,
                 (byte*)iv, (word32)ivLen, (byte*)out_tag, (word32)tagLen,
-                (byte*)aadAddr, (word32)req.aad.sz);
+                (byte*)aadPtr, (word32)req.aad.sz);
         }
         else {
             ret = wc_AesGcmDecrypt(
                 aes, (byte*)outAddr, (byte*)inAddr, (word32)len,
                 (byte*)iv, (word32)ivLen, (byte*)tag, (word32)tagLen,
-                (byte*)aadAddr, (word32)req.aad.sz);
+                (byte*)aadPtr, (word32)req.aad.sz);
         }
         if (ret == WH_ERROR_OK) {
             outSz = len;
