@@ -75,6 +75,39 @@
 #include "wolfhsm/wh_client.h"
 #include "wolfhsm/wh_client_crypto.h"
 
+#ifdef WOLF_PRIVATE_KEY_ID
+/* Resolve the server-side key id for a key the caller supplied.
+ *
+ * wolfHSM's own API (wh_Client_*SetKeyId) carries the id in devCtx, but that
+ * is not the only way a key id arrives. wolfSSL's device-key API -
+ * wolfSSL_CTX_use_PrivateKey_Id(), which is how a TLS server binds to a key it
+ * does not hold - reaches wolfCrypt as wc_ecc_init_id()/wc_RsaPrivateKeyDecodeId()
+ * and lands in the generic id slot instead. Without this a TLS handshake would
+ * see an erased id and try to import a key that holds no material.
+ *
+ * devCtx wins, so an explicit SetKeyId is never overridden. The id slot is read
+ * only when it is exactly a whKeyId wide, which is what an application passes
+ * as wolfSSL_CTX_use_PrivateKey_Id(ctx, &keyId, sizeof(keyId), devId). */
+static whKeyId _KeyIdFromWcId(whKeyId fromDevCtx, const unsigned char* id,
+                              int idLen)
+{
+    whKeyId kid;
+
+    if (!WH_KEYID_ISERASED(fromDevCtx)) {
+        return fromDevCtx;
+    }
+    if ((id == NULL) || (idLen != (int)sizeof(whKeyId))) {
+        return fromDevCtx;
+    }
+    memcpy(&kid, id, sizeof(kid));
+    return kid;
+}
+#define WH_KEYID_FROM_WC(_devctx, _key) \
+    _KeyIdFromWcId(WH_DEVCTX_TO_KEYID(_devctx), (_key)->id, (_key)->idLen)
+#else
+#define WH_KEYID_FROM_WC(_devctx, _key) WH_DEVCTX_TO_KEYID(_devctx)
+#endif /* WOLF_PRIVATE_KEY_ID */
+
 /** Forward declarations */
 #ifdef HAVE_ECC
 /* Async halves of the keygen path used by the public Request/Response APIs
@@ -2418,7 +2451,7 @@ static int _EccSharedSecretBlocking(whClientContext* ctx, ecc_key* priv_key,
     int     prv_evict  = 0;
     int     pub_evict  = 0;
 
-    pub_key_id = WH_DEVCTX_TO_KEYID(pub_key->devCtx);
+    pub_key_id = WH_KEYID_FROM_WC(pub_key->devCtx, pub_key);
     if (WH_KEYID_ISERASED(pub_key_id)) {
         uint8_t    keyLabel[] = "TempEccDh-pub";
         whNvmFlags imp_flags  = WH_NVM_FLAGS_USAGE_DERIVE;
@@ -2430,7 +2463,7 @@ static int _EccSharedSecretBlocking(whClientContext* ctx, ecc_key* priv_key,
         }
     }
 
-    prv_key_id = WH_DEVCTX_TO_KEYID(priv_key->devCtx);
+    prv_key_id = WH_KEYID_FROM_WC(priv_key->devCtx, priv_key);
     if ((ret == WH_ERROR_OK) && WH_KEYID_ISERASED(prv_key_id)) {
         uint8_t    keyLabel[] = "TempEccDh-prv";
         whNvmFlags imp_flags  = WH_NVM_FLAGS_USAGE_DERIVE;
@@ -2618,7 +2651,7 @@ int wh_Client_EccSign(whClientContext* ctx, ecc_key* key, const uint8_t* hash,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
 
     WH_DEBUG_CLIENT_VERBOSE("keyid:%x, in_len:%u, inout_len:%p\n", key_id,
            hash_len, inout_sig_len);
@@ -2820,7 +2853,7 @@ int wh_Client_EccVerify(whClientContext* ctx, ecc_key* key, const uint8_t* sig,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
     if (key->type == ECC_PRIVATEKEY_ONLY) {
         export_pub_key = 1;
     }
@@ -2988,7 +3021,7 @@ int wh_Client_EccMakePub(whClientContext* ctx, ecc_key* key, uint8_t* pubOut,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
         /* Must import the key to the server and evict it afterwards */
@@ -3123,7 +3156,7 @@ int wh_Client_EccCheckPubKey(whClientContext* ctx, ecc_key* key,
     (void)check_order;
     (void)check_priv;
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
         /* Must import the key to the server and evict it afterwards */
@@ -5022,7 +5055,7 @@ int wh_Client_RsaFunction(whClientContext* ctx, RsaKey* key, int rsa_type,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
 
     WH_DEBUG_CLIENT_VERBOSE("key_id:%x\n", key_id);
 
@@ -5199,7 +5232,7 @@ int wh_Client_RsaGetSize(whClientContext* ctx, const RsaKey* key, int* out_size)
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
 
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
