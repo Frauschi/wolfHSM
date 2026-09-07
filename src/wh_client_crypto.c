@@ -81,9 +81,16 @@
  * wolfHSM's own API (wh_Client_*SetKeyId) carries the id in devCtx, but that
  * is not the only way a key id arrives. wolfSSL's device-key API -
  * wolfSSL_CTX_use_PrivateKey_Id(), which is how a TLS server binds to a key it
- * does not hold - reaches wolfCrypt as wc_ecc_init_id()/wc_RsaPrivateKeyDecodeId()
- * and lands in the generic id slot instead. Without this a TLS handshake would
- * see an erased id and try to import a key that holds no material.
+ * does not hold - reaches wolfCrypt through the per-algorithm init-by-id calls
+ * (wc_ecc_init_id, wc_InitRsaKey_Id, wc_AesInit_Id, wc_MlDsaKey_InitId,
+ * wc_MlKemKey_Init_Id, wc_LmsKey_InitId, wc_XmssKey_InitId) and lands in the
+ * generic id slot instead. Without this a handshake would see an erased id and
+ * try to import a key that holds no material.
+ *
+ * Applied at every operation whose wolfCrypt struct has the slot. Curve25519
+ * and Ed25519 have no id member, so they stay devCtx-only, and so do the
+ * wh_Client_*GetKeyId accessors: they are the read side of *SetKeyId, which
+ * writes devCtx, so consulting a slot Set never writes would be an asymmetry.
  *
  * devCtx wins, so an explicit SetKeyId is never overridden. The id slot is read
  * only when it is exactly a whKeyId wide, which is what an application passes
@@ -102,10 +109,13 @@ static whKeyId _KeyIdFromWcId(whKeyId fromDevCtx, const unsigned char* id,
     memcpy(&kid, id, sizeof(kid));
     return kid;
 }
-#define WH_KEYID_FROM_WC(_devctx, _key) \
-    _KeyIdFromWcId(WH_DEVCTX_TO_KEYID(_devctx), (_key)->id, (_key)->idLen)
+/* Takes the key alone: passing devCtx separately let a caller read the two
+ * halves from different keys, and that mismatch compiled silently. */
+#define WH_KEYID_FROM_WC(_key) \
+    _KeyIdFromWcId(WH_DEVCTX_TO_KEYID((_key)->devCtx), (_key)->id, \
+                   (_key)->idLen)
 #else
-#define WH_KEYID_FROM_WC(_devctx, _key) WH_DEVCTX_TO_KEYID(_devctx)
+#define WH_KEYID_FROM_WC(_key) WH_DEVCTX_TO_KEYID((_key)->devCtx)
 #endif /* WOLF_PRIVATE_KEY_ID */
 
 /** Forward declarations */
@@ -500,7 +510,7 @@ int wh_Client_AesCtrRequest(whClientContext* ctx, Aes* aes, int enc,
     }
 
     key_len = aes->keylen;
-    key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    key_id  = WH_KEYID_FROM_WC(aes);
 
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
@@ -657,7 +667,7 @@ int wh_Client_AesCtrDmaRequest(whClientContext* ctx, Aes* aes, int enc,
     req->enc  = enc;
     req->left = aes->left;
 
-    req->keyId = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    req->keyId = WH_KEYID_FROM_WC(aes);
     if (req->keyId != WH_KEYID_ERASED) {
         req->keySz = 0;
     }
@@ -844,7 +854,7 @@ int wh_Client_AesEcbRequest(whClientContext* ctx, Aes* aes, int enc,
     }
 
     key_len = aes->keylen;
-    key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    key_id  = WH_KEYID_FROM_WC(aes);
 
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
@@ -986,7 +996,7 @@ int wh_Client_AesEcbDmaRequest(whClientContext* ctx, Aes* aes, int enc,
     memset(req, 0, sizeof(*req));
     req->enc = enc;
 
-    req->keyId = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    req->keyId = WH_KEYID_FROM_WC(aes);
     if (req->keyId != WH_KEYID_ERASED) {
         req->keySz = 0;
     }
@@ -1174,7 +1184,7 @@ int wh_Client_AesCbcRequest(whClientContext* ctx, Aes* aes, int enc,
 
     key_len = aes->keylen;
     key     = (const uint8_t*)(aes->devKey);
-    key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    key_id  = WH_KEYID_FROM_WC(aes);
     iv      = (uint8_t*)aes->reg;
     iv_len  = AES_IV_SIZE;
 
@@ -1332,7 +1342,7 @@ int wh_Client_AesCbcDmaRequest(whClientContext* ctx, Aes* aes, int enc,
     memset(req, 0, sizeof(*req));
     req->enc = enc;
 
-    req->keyId = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    req->keyId = WH_KEYID_FROM_WC(aes);
     if (req->keyId != WH_KEYID_ERASED) {
         req->keySz = 0;
     }
@@ -1520,7 +1530,7 @@ int wh_Client_AesGcmRequest(whClientContext* ctx, Aes* aes, int enc,
     }
 
     key_len = aes->keylen;
-    key_id  = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    key_id  = WH_KEYID_FROM_WC(aes);
 
     dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
     if (dataPtr == NULL) {
@@ -1713,7 +1723,7 @@ int wh_Client_AesGcmDmaRequest(whClientContext* ctx, Aes* aes, int enc,
     req->ivSz      = iv_len;
     req->authTagSz = tag_len;
 
-    req->keyId = WH_DEVCTX_TO_KEYID(aes->devCtx);
+    req->keyId = WH_KEYID_FROM_WC(aes);
     if (req->keyId != WH_KEYID_ERASED) {
         req->keySz = 0;
     }
@@ -2451,7 +2461,7 @@ static int _EccSharedSecretBlocking(whClientContext* ctx, ecc_key* priv_key,
     int     prv_evict  = 0;
     int     pub_evict  = 0;
 
-    pub_key_id = WH_KEYID_FROM_WC(pub_key->devCtx, pub_key);
+    pub_key_id = WH_KEYID_FROM_WC(pub_key);
     if (WH_KEYID_ISERASED(pub_key_id)) {
         uint8_t    keyLabel[] = "TempEccDh-pub";
         whNvmFlags imp_flags  = WH_NVM_FLAGS_USAGE_DERIVE;
@@ -2463,7 +2473,7 @@ static int _EccSharedSecretBlocking(whClientContext* ctx, ecc_key* priv_key,
         }
     }
 
-    prv_key_id = WH_KEYID_FROM_WC(priv_key->devCtx, priv_key);
+    prv_key_id = WH_KEYID_FROM_WC(priv_key);
     if ((ret == WH_ERROR_OK) && WH_KEYID_ISERASED(prv_key_id)) {
         uint8_t    keyLabel[] = "TempEccDh-prv";
         whNvmFlags imp_flags  = WH_NVM_FLAGS_USAGE_DERIVE;
@@ -2651,7 +2661,7 @@ int wh_Client_EccSign(whClientContext* ctx, ecc_key* key, const uint8_t* hash,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
+    key_id = WH_KEYID_FROM_WC(key);
 
     WH_DEBUG_CLIENT_VERBOSE("keyid:%x, in_len:%u, inout_len:%p\n", key_id,
            hash_len, inout_sig_len);
@@ -2853,7 +2863,7 @@ int wh_Client_EccVerify(whClientContext* ctx, ecc_key* key, const uint8_t* sig,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
+    key_id = WH_KEYID_FROM_WC(key);
     if (key->type == ECC_PRIVATEKEY_ONLY) {
         export_pub_key = 1;
     }
@@ -3021,7 +3031,7 @@ int wh_Client_EccMakePub(whClientContext* ctx, ecc_key* key, uint8_t* pubOut,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
+    key_id = WH_KEYID_FROM_WC(key);
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
         /* Must import the key to the server and evict it afterwards */
@@ -3156,7 +3166,7 @@ int wh_Client_EccCheckPubKey(whClientContext* ctx, ecc_key* key,
     (void)check_order;
     (void)check_priv;
 
-    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
+    key_id = WH_KEYID_FROM_WC(key);
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
         /* Must import the key to the server and evict it afterwards */
@@ -5055,7 +5065,7 @@ int wh_Client_RsaFunction(whClientContext* ctx, RsaKey* key, int rsa_type,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
+    key_id = WH_KEYID_FROM_WC(key);
 
     WH_DEBUG_CLIENT_VERBOSE("key_id:%x\n", key_id);
 
@@ -5232,7 +5242,7 @@ int wh_Client_RsaGetSize(whClientContext* ctx, const RsaKey* key, int* out_size)
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_KEYID_FROM_WC(key->devCtx, key);
+    key_id = WH_KEYID_FROM_WC(key);
 
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
@@ -5684,7 +5694,7 @@ int wh_Client_CmacGetKeyId(Cmac* key, whNvmId* outId)
 static void _CmacResolveClientKey(Cmac* cmac, const uint8_t** inout_key,
                                   uint32_t* inout_keyLen, whKeyId* out_key_id)
 {
-    whKeyId key_id = WH_DEVCTX_TO_KEYID(cmac->devCtx);
+    whKeyId key_id = WH_KEYID_FROM_WC(cmac);
 
     if (*inout_key == NULL && *inout_keyLen == 0 && WH_KEYID_ISERASED(key_id) &&
         cmac->aes.keylen > 0) {
@@ -10325,7 +10335,7 @@ int wh_Client_MlDsaSign(whClientContext* ctx, const byte* in, word32 in_len,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
 
     WH_DEBUG_CLIENT_VERBOSE("keyid:%x, in_len:%u, inout_len:%p\n", key_id,
            in_len, inout_len);
@@ -10468,7 +10478,7 @@ int wh_Client_MlDsaVerify(whClientContext* ctx, const byte* sig, word32 sig_len,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
 
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
@@ -10898,7 +10908,7 @@ int wh_Client_MlDsaSignDma(whClientContext* ctx, const byte* in, word32 in_len,
     /* Caller's signature buffer capacity, before the response overwrites it */
     sigCap = *out_len;
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
 
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
@@ -11055,7 +11065,7 @@ int wh_Client_MlDsaVerifyDma(whClientContext* ctx, const byte* sig,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
 
     /* Import key if necessary */
     if (WH_KEYID_ISERASED(key_id)) {
@@ -11500,7 +11510,7 @@ int wh_Client_MlKemEncapsulate(whClientContext* ctx, MlKemKey* key,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         uint8_t    keyLabel[] = "TempMlKemEncaps";
         whNvmFlags flags      = WH_NVM_FLAGS_USAGE_DERIVE;
@@ -11622,7 +11632,7 @@ int wh_Client_MlKemDecapsulate(whClientContext* ctx, MlKemKey* key,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         uint8_t    keyLabel[] = "TempMlKemDecaps";
         whNvmFlags flags      = WH_NVM_FLAGS_USAGE_DERIVE;
@@ -12006,7 +12016,7 @@ int wh_Client_MlKemEncapsulateDma(whClientContext* ctx, MlKemKey* key,
 
     origCtSz = *inout_ct_len;
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         uint8_t    keyLabel[] = "TempMlKemEncaps";
         whNvmFlags flags      = WH_NVM_FLAGS_USAGE_DERIVE;
@@ -12131,7 +12141,7 @@ int wh_Client_MlKemDecapsulateDma(whClientContext* ctx, MlKemKey* key,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         uint8_t    keyLabel[] = "TempMlKemDecaps";
         whNvmFlags flags      = WH_NVM_FLAGS_USAGE_DERIVE;
@@ -12407,7 +12417,7 @@ int wh_Client_LmsSignDma(whClientContext* ctx, const byte* msg, word32 msgSz,
     }
 
     sigCap = *sigSz;
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         return WH_ERROR_BADARGS;
     }
@@ -12513,7 +12523,7 @@ int wh_Client_LmsVerifyDma(whClientContext* ctx, const byte* sig, word32 sigSz,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         /* No HSM-resident key; let wolfCrypt fall through to software verify
          * using the client-side public key. */
@@ -12609,7 +12619,7 @@ int wh_Client_LmsSigsLeftDma(whClientContext* ctx, LmsKey* key)
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         return WH_ERROR_BADARGS;
     }
@@ -12888,7 +12898,7 @@ int wh_Client_XmssSignDma(whClientContext* ctx, const byte* msg, word32 msgSz,
     }
 
     sigCap = *sigSz;
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         return WH_ERROR_BADARGS;
     }
@@ -12995,7 +13005,7 @@ int wh_Client_XmssVerifyDma(whClientContext* ctx, const byte* sig,
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         /* No HSM-resident key; let wolfCrypt fall through to software verify
          * using the client-side public key. */
@@ -13091,7 +13101,7 @@ int wh_Client_XmssSigsLeftDma(whClientContext* ctx, XmssKey* key)
         return WH_ERROR_BADARGS;
     }
 
-    key_id = WH_DEVCTX_TO_KEYID(key->devCtx);
+    key_id = WH_KEYID_FROM_WC(key);
     if (WH_KEYID_ISERASED(key_id)) {
         return WH_ERROR_BADARGS;
     }
