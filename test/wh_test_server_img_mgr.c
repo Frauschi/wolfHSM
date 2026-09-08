@@ -54,7 +54,7 @@
 
 #include "wh_test_common.h"
 
-#ifndef NO_RSA
+#if !defined(NO_RSA) || defined(HAVE_ECC)
 #include "gen/wh_test_wolfboot_img_data.h"
 #endif
 
@@ -1340,6 +1340,119 @@ static int whTest_ServerImgMgrServerCfgRsa2048(whServerConfig* serverCfg)
 }
 #endif /* !NO_RSA */
 
+#if !defined(NO_RSA) || defined(HAVE_ECC)
+/* Find the signature TLV in a wolfBoot header. Returns the offset of its
+ * value and stores its length, or returns 0 if not found. */
+static size_t _wolfBootSigOffset(const uint8_t* hdr, size_t hdrSz,
+                                 size_t* sigLen)
+{
+    size_t   off = WH_IMG_MGR_WOLFBOOT_HDR_OFFSET;
+    uint16_t type;
+    uint16_t len;
+
+    while (off + 4 < hdrSz) {
+        /* Skip padding bytes and odd-address alignment */
+        if (hdr[off] == WH_IMG_MGR_WOLFBOOT_HDR_PADDING || (off & 1) != 0) {
+            off++;
+            continue;
+        }
+        type = (uint16_t)(hdr[off] | (hdr[off + 1] << 8));
+        len  = (uint16_t)(hdr[off + 2] | (hdr[off + 3] << 8));
+        if (type == 0 || off + 4 + len > hdrSz) {
+            break;
+        }
+        if (type == WH_IMG_MGR_WOLFBOOT_HDR_SIGNATURE) {
+            *sigLen = len;
+            return off + 4;
+        }
+        off += 4 + (size_t)len;
+    }
+    return 0;
+}
+
+/* Verify a copy of img whose header signature has its low bit flipped. The
+ * payload hash still matches, so only the signature check can reject, and the
+ * flipped value stays in range. hdrCopy must hold img->hdrSize bytes. */
+static int _wolfBootVerifyCorruptSig(whServerImgMgrContext*   imgMgr,
+                                     const whServerImgMgrImg* img,
+                                     uint8_t* hdrCopy, const char* what)
+{
+    whServerImgMgrVerifyResult result;
+    whServerImgMgrImg          corruptImage = *img;
+    const uint8_t*             hdr          = (const uint8_t*)img->hdrAddr;
+    size_t                     sigLen       = 0;
+    size_t                     sigOff;
+    int                        ret;
+
+    sigOff = _wolfBootSigOffset(hdr, img->hdrSize, &sigLen);
+    if (sigOff == 0 || sigLen == 0) {
+        WH_ERROR_PRINT("%s header has no signature TLV\n", what);
+        return WH_ERROR_ABORTED;
+    }
+    memcpy(hdrCopy, hdr, img->hdrSize);
+    hdrCopy[sigOff + sigLen - 1] ^= 0x01;
+    corruptImage.hdrAddr = (uintptr_t)hdrCopy;
+
+    ret = wh_Server_ImgMgrVerifyImg(imgMgr, &corruptImage, &result);
+    if (ret != WH_ERROR_NOTVERIFIED) {
+        WH_ERROR_PRINT("%s corrupt signature verify returned %d, expected %d\n",
+                       what, ret, WH_ERROR_NOTVERIFIED);
+        return WH_ERROR_ABORTED;
+    }
+    return WH_ERROR_OK;
+}
+
+#ifdef HAVE_ECC
+/* Verify copies of img whose raw R||S header signature has R zeroed, then S
+ * set above the curve order. wolfCrypt reports each with a different error
+ * code, and the verify method must map both to NOTVERIFIED. hdrCopy must
+ * hold img->hdrSize bytes. */
+static int _wolfBootVerifyOutOfRangeSig(whServerImgMgrContext*   imgMgr,
+                                        const whServerImgMgrImg* img,
+                                        uint8_t* hdrCopy, const char* what)
+{
+    whServerImgMgrVerifyResult result;
+    whServerImgMgrImg          badImage = *img;
+    const uint8_t*             hdr      = (const uint8_t*)img->hdrAddr;
+    size_t                     sigLen   = 0;
+    size_t                     sigOff;
+    int                        ret;
+
+    sigOff = _wolfBootSigOffset(hdr, img->hdrSize, &sigLen);
+    if (sigOff == 0 || sigLen != 64) {
+        WH_ERROR_PRINT("%s header has no raw R||S signature TLV\n", what);
+        return WH_ERROR_ABORTED;
+    }
+    badImage.hdrAddr = (uintptr_t)hdrCopy;
+
+    /* R = 0 */
+    memcpy(hdrCopy, hdr, img->hdrSize);
+    memset(hdrCopy + sigOff, 0x00, 32);
+    ret = wh_Server_ImgMgrVerifyImg(imgMgr, &badImage, &result);
+    if (ret != WH_ERROR_NOTVERIFIED ||
+        result.verifyMethodResult != WH_ERROR_NOTVERIFIED) {
+        WH_ERROR_PRINT("%s R=0 verify returned %d, method %d, expected %d\n",
+                       what, ret, result.verifyMethodResult,
+                       WH_ERROR_NOTVERIFIED);
+        return WH_ERROR_ABORTED;
+    }
+
+    /* S above the curve order */
+    memcpy(hdrCopy, hdr, img->hdrSize);
+    memset(hdrCopy + sigOff + 32, 0xFF, 32);
+    ret = wh_Server_ImgMgrVerifyImg(imgMgr, &badImage, &result);
+    if (ret != WH_ERROR_NOTVERIFIED ||
+        result.verifyMethodResult != WH_ERROR_NOTVERIFIED) {
+        WH_ERROR_PRINT("%s S>n verify returned %d, method %d, expected %d\n",
+                       what, ret, result.verifyMethodResult,
+                       WH_ERROR_NOTVERIFIED);
+        return WH_ERROR_ABORTED;
+    }
+    return WH_ERROR_OK;
+}
+#endif /* HAVE_ECC */
+#endif /* !NO_RSA || HAVE_ECC */
+
 #ifndef NO_RSA
 static int
 whTest_ServerImgMgrServerCfgWolfBootRsa4096(whServerConfig* serverCfg)
@@ -1355,8 +1468,8 @@ whTest_ServerImgMgrServerCfgWolfBootRsa4096(whServerConfig* serverCfg)
     /* Set up image manager config for wolfBoot verification */
     testImage.addr    = (uintptr_t)wolfboot_test_firmware;
     testImage.size    = sizeof(wolfboot_test_firmware);
-    testImage.hdrAddr = (uintptr_t)wolfboot_test_header;
-    testImage.hdrSize = sizeof(wolfboot_test_header);
+    testImage.hdrAddr = (uintptr_t)wolfboot_test_rsa4096_header;
+    testImage.hdrSize = sizeof(wolfboot_test_rsa4096_header);
     testImage.keyId   = testKeyId;
     testImage.imgType = WH_IMG_MGR_IMG_TYPE_WOLFBOOT;
     testImage.verifyMethod =
@@ -1388,11 +1501,11 @@ whTest_ServerImgMgrServerCfgWolfBootRsa4096(whServerConfig* serverCfg)
         keyMeta.id            = testKeyId;
         keyMeta.access        = WH_NVM_ACCESS_ANY;
         keyMeta.flags         = WH_NVM_FLAGS_NONE;
-        keyMeta.len           = sizeof(wolfboot_test_pubkey_der);
+        keyMeta.len           = sizeof(wolfboot_test_rsa4096_pubkey_der);
         snprintf((char*)keyMeta.label, WH_NVM_LABEL_LEN, "WBPubKey");
 
-        ret = wh_Server_KeystoreCacheKey(server, &keyMeta,
-                                         (uint8_t*)wolfboot_test_pubkey_der);
+        ret = wh_Server_KeystoreCacheKey(
+            server, &keyMeta, (uint8_t*)wolfboot_test_rsa4096_pubkey_der);
         if (ret != WH_ERROR_OK) {
             WH_ERROR_PRINT("Failed to cache key: %d\n", ret);
             wh_Server_Cleanup(server);
@@ -1453,6 +1566,25 @@ whTest_ServerImgMgrServerCfgWolfBootRsa4096(whServerConfig* serverCfg)
         }
     }
 
+    /* Negative test: corrupt the signature so only the RSA check can reject */
+    {
+        XALIGNED(4) uint8_t corrupt_hdr[sizeof(wolfboot_test_rsa4096_header)];
+        ret = _wolfBootVerifyCorruptSig(&imgMgr, &testImage, corrupt_hdr,
+                                        "wolfBoot RSA4096");
+        if (ret != WH_ERROR_OK) {
+            wh_Server_Cleanup(server);
+            return ret;
+        }
+    }
+
+    /* Remove the test key */
+    ret = wh_Server_KeystoreEraseKey(server, testKeyId);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("Failed to erase key: %d\n", ret);
+        wh_Server_Cleanup(server);
+        return ret;
+    }
+
     wh_Server_Cleanup(server);
     WH_TEST_PRINT("IMG_MGR wolfBoot RSA4096 Test completed successfully!\n");
     return 0;
@@ -1475,12 +1607,12 @@ whTest_ServerImgMgrServerCfgWolfBootCertChainRsa4096(whServerConfig* serverCfg)
     rootCaMeta.id     = rootCaNvmId;
     rootCaMeta.access = WH_NVM_ACCESS_ANY;
     rootCaMeta.flags  = WH_NVM_FLAGS_NONE;
-    rootCaMeta.len    = sizeof(wolfboot_test_root_ca_cert_der);
+    rootCaMeta.len    = sizeof(wolfboot_test_rsa4096_root_ca_cert_der);
     snprintf((char*)rootCaMeta.label, WH_NVM_LABEL_LEN, "RootCA");
 
     ret = wh_Nvm_AddObject(serverCfg->nvm, &rootCaMeta,
-                           sizeof(wolfboot_test_root_ca_cert_der),
-                           wolfboot_test_root_ca_cert_der);
+                           sizeof(wolfboot_test_rsa4096_root_ca_cert_der),
+                           wolfboot_test_rsa4096_root_ca_cert_der);
     if (ret != WH_ERROR_OK) {
         WH_ERROR_PRINT("Failed to add root CA to NVM: %d\n", ret);
         return ret;
@@ -1489,8 +1621,8 @@ whTest_ServerImgMgrServerCfgWolfBootCertChainRsa4096(whServerConfig* serverCfg)
     /* Set up image manager config for wolfBoot cert chain verification */
     testImage.addr     = (uintptr_t)wolfboot_test_firmware;
     testImage.size     = sizeof(wolfboot_test_firmware);
-    testImage.hdrAddr  = (uintptr_t)wolfboot_test_cert_chain_header;
-    testImage.hdrSize  = sizeof(wolfboot_test_cert_chain_header);
+    testImage.hdrAddr  = (uintptr_t)wolfboot_test_rsa4096_cert_chain_header;
+    testImage.hdrSize  = sizeof(wolfboot_test_rsa4096_cert_chain_header);
     testImage.sigNvmId = rootCaNvmId;
     testImage.imgType  = WH_IMG_MGR_IMG_TYPE_WOLFBOOT_CERT;
     testImage.verifyMethod =
@@ -1561,6 +1693,18 @@ whTest_ServerImgMgrServerCfgWolfBootCertChainRsa4096(whServerConfig* serverCfg)
         }
     }
 
+    /* Negative test: corrupt the signature so only the RSA check can reject */
+    {
+        XALIGNED(4)
+        uint8_t corrupt_hdr[sizeof(wolfboot_test_rsa4096_cert_chain_header)];
+        ret = _wolfBootVerifyCorruptSig(&imgMgr, &testImage, corrupt_hdr,
+                                        "wolfBoot cert chain RSA4096");
+        if (ret != WH_ERROR_OK) {
+            wh_Server_Cleanup(server);
+            return ret;
+        }
+    }
+
     /* Delete the root CA cert from NVM */
     ret = wh_Nvm_DestroyObjects(serverCfg->nvm, 1, &rootCaNvmId);
     if (ret != WH_ERROR_OK) {
@@ -1576,6 +1720,213 @@ whTest_ServerImgMgrServerCfgWolfBootCertChainRsa4096(whServerConfig* serverCfg)
 }
 #endif /* WOLFHSM_CFG_CERTIFICATE_MANAGER */
 #endif /* !NO_RSA */
+
+#ifdef HAVE_ECC
+/* Cache and commit a wolfBoot public key in the server keystore */
+static int _wolfBootEcc256CommitKey(whServerContext* server, whNvmId keyId,
+                                    const char* label, const uint8_t* key,
+                                    size_t keySz)
+{
+    int           ret;
+    whNvmMetadata keyMeta = {0};
+
+    keyMeta.id     = keyId;
+    keyMeta.access = WH_NVM_ACCESS_ANY;
+    keyMeta.flags  = WH_NVM_FLAGS_NONE;
+    keyMeta.len    = (whNvmSize)keySz;
+    snprintf((char*)keyMeta.label, WH_NVM_LABEL_LEN, "%s", label);
+
+    ret = wh_Server_KeystoreCacheKey(server, &keyMeta, (uint8_t*)key);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("Failed to cache key %u: %d\n", (unsigned)keyId, ret);
+        return ret;
+    }
+
+    ret = wh_Server_KeystoreCommitKey(server, keyId);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("Failed to commit key %u: %d\n", (unsigned)keyId, ret);
+    }
+    return ret;
+}
+
+/* Verify an image and require both the method and the action to succeed */
+static int _wolfBootEcc256VerifyExpectOk(whServerImgMgrContext*   imgMgr,
+                                         const whServerImgMgrImg* img,
+                                         const char*              what)
+{
+    int                        ret;
+    whServerImgMgrVerifyResult result;
+
+    ret = wh_Server_ImgMgrVerifyImg(imgMgr, img, &result);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("%s verify failed: %d\n", what, ret);
+        return ret;
+    }
+    if (result.verifyMethodResult != WH_ERROR_OK) {
+        WH_ERROR_PRINT("%s verify method failed: %d\n", what,
+                       result.verifyMethodResult);
+        return result.verifyMethodResult;
+    }
+    if (result.verifyActionResult != WH_ERROR_OK) {
+        WH_ERROR_PRINT("%s verify action failed: %d\n", what,
+                       result.verifyActionResult);
+        return result.verifyActionResult;
+    }
+    return WH_ERROR_OK;
+}
+
+static int whTest_ServerImgMgrServerCfgWolfBootEcc256(whServerConfig* serverCfg)
+{
+    int                        ret          = 0;
+    whServerContext            server[1]    = {0};
+    whServerImgMgrConfig       imgMgrConfig = {0};
+    whServerImgMgrContext      imgMgr       = {0};
+    whServerImgMgrImg          testImage    = {0};
+    whServerImgMgrImg          altImage;
+    const whNvmId              derKeyId = 3;
+    const whNvmId              rawKeyId = 4;
+    whServerImgMgrVerifyResult result;
+
+    /* Set up image manager config for wolfBoot ECC256 verification */
+    testImage.addr    = (uintptr_t)wolfboot_test_firmware;
+    testImage.size    = sizeof(wolfboot_test_firmware);
+    testImage.hdrAddr = (uintptr_t)wolfboot_test_ecc256_header;
+    testImage.hdrSize = sizeof(wolfboot_test_ecc256_header);
+    testImage.keyId   = derKeyId;
+    testImage.imgType = WH_IMG_MGR_IMG_TYPE_WOLFBOOT;
+    testImage.verifyMethod =
+        wh_Server_ImgMgrVerifyMethodWolfBootEcc256WithSha256;
+    testImage.verifyAction = wh_Server_ImgMgrVerifyActionDefault;
+
+    imgMgrConfig.images     = &testImage;
+    imgMgrConfig.imageCount = 1;
+    imgMgrConfig.server     = server;
+
+    /* Initialize server */
+    ret = wh_Server_Init(server, serverCfg);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("Failed to initialize server: %d\n", ret);
+        return ret;
+    }
+
+    /* Initialize the image manager */
+    ret = wh_Server_ImgMgrInit(&imgMgr, &imgMgrConfig);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("Failed to initialize image manager: %d\n", ret);
+        wh_Server_Cleanup(server);
+        return ret;
+    }
+
+    /* Provision the public key in both DER and raw X||Y form */
+    ret = _wolfBootEcc256CommitKey(server, derKeyId, "WBEccDer",
+                                   wolfboot_test_ecc256_pubkey_der,
+                                   sizeof(wolfboot_test_ecc256_pubkey_der));
+    if (ret != WH_ERROR_OK) {
+        wh_Server_Cleanup(server);
+        return ret;
+    }
+    ret = _wolfBootEcc256CommitKey(server, rawKeyId, "WBEccRaw",
+                                   wolfboot_test_ecc256_pubkey_raw,
+                                   sizeof(wolfboot_test_ecc256_pubkey_raw));
+    if (ret != WH_ERROR_OK) {
+        wh_Server_Cleanup(server);
+        return ret;
+    }
+
+    /* Positive test: verify wolfBoot image with the DER key */
+    ret = _wolfBootEcc256VerifyExpectOk(&imgMgr, &testImage,
+                                        "wolfBoot ECC256 (DER key)");
+    if (ret != WH_ERROR_OK) {
+        wh_Server_Cleanup(server);
+        return ret;
+    }
+
+    /* Positive test: verify again with the raw X||Y key */
+    altImage       = testImage;
+    altImage.keyId = rawKeyId;
+    ret            = _wolfBootEcc256VerifyExpectOk(&imgMgr, &altImage,
+                                                   "wolfBoot ECC256 (raw key)");
+    if (ret != WH_ERROR_OK) {
+        wh_Server_Cleanup(server);
+        return ret;
+    }
+
+    /* Negative test: flip a bit in firmware payload copy and verify fails */
+    {
+        uint8_t corrupt_fw[sizeof(wolfboot_test_firmware)];
+        altImage = testImage;
+        memcpy(corrupt_fw, wolfboot_test_firmware,
+               sizeof(wolfboot_test_firmware));
+        corrupt_fw[0] ^= 0x01;
+        altImage.addr = (uintptr_t)corrupt_fw;
+
+        ret = wh_Server_ImgMgrVerifyImg(&imgMgr, &altImage, &result);
+        if (ret == WH_ERROR_OK) {
+            WH_ERROR_PRINT("wolfBoot ECC256 corrupt verify should have failed "
+                           "but succeeded\n");
+            wh_Server_Cleanup(server);
+            return WH_ERROR_ABORTED;
+        }
+        if (ret != result.verifyMethodResult) {
+            WH_ERROR_PRINT("wolfBoot ECC256 corrupt verify return %d does not "
+                           "match verify method result %d\n",
+                           ret, result.verifyMethodResult);
+            wh_Server_Cleanup(server);
+            return WH_ERROR_ABORTED;
+        }
+    }
+
+    /* Negative test: a header signed with RSA4096 must be rejected */
+    altImage         = testImage;
+    altImage.hdrAddr = (uintptr_t)wolfboot_test_rsa4096_header;
+    altImage.hdrSize = sizeof(wolfboot_test_rsa4096_header);
+    ret              = wh_Server_ImgMgrVerifyImg(&imgMgr, &altImage, &result);
+    if (ret != WH_ERROR_NOTVERIFIED) {
+        WH_ERROR_PRINT("wolfBoot ECC256 verify of an RSA4096 header returned "
+                       "%d, expected %d\n",
+                       ret, WH_ERROR_NOTVERIFIED);
+        wh_Server_Cleanup(server);
+        return WH_ERROR_ABORTED;
+    }
+
+    /* Negative test: corrupt the signature so only the ECC check can reject */
+    {
+        XALIGNED(4) uint8_t corrupt_hdr[sizeof(wolfboot_test_ecc256_header)];
+        ret = _wolfBootVerifyCorruptSig(&imgMgr, &testImage, corrupt_hdr,
+                                        "wolfBoot ECC256");
+        if (ret != WH_ERROR_OK) {
+            wh_Server_Cleanup(server);
+            return ret;
+        }
+
+        /* Negative test: out-of-range R and S are reported as NOTVERIFIED */
+        ret = _wolfBootVerifyOutOfRangeSig(&imgMgr, &testImage, corrupt_hdr,
+                                           "wolfBoot ECC256");
+        if (ret != WH_ERROR_OK) {
+            wh_Server_Cleanup(server);
+            return ret;
+        }
+    }
+
+    /* Remove the test keys */
+    ret = wh_Server_KeystoreEraseKey(server, derKeyId);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("Failed to erase DER key: %d\n", ret);
+        wh_Server_Cleanup(server);
+        return ret;
+    }
+    ret = wh_Server_KeystoreEraseKey(server, rawKeyId);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("Failed to erase raw key: %d\n", ret);
+        wh_Server_Cleanup(server);
+        return ret;
+    }
+
+    wh_Server_Cleanup(server);
+    WH_TEST_PRINT("IMG_MGR wolfBoot ECC256 Test completed successfully!\n");
+    return 0;
+}
+#endif /* HAVE_ECC */
 
 int whTest_ServerImgMgr(whTestNvmBackendType nvmType)
 {
@@ -1695,6 +2046,16 @@ int whTest_ServerImgMgr(whTestNvmBackendType nvmType)
     }
 #endif /* WOLFHSM_CFG_CERTIFICATE_MANAGER */
 #endif /* !NO_RSA */
+
+#ifdef HAVE_ECC
+    /* wolfBoot ECC256 verify method */
+    rc = whTest_ServerImgMgrServerCfgWolfBootEcc256(s_conf);
+    if (rc != 0) {
+        WH_ERROR_PRINT("wolfBoot ECC256 image manager tests failed: %d\n", rc);
+        wh_Nvm_Cleanup(nvm);
+        return rc;
+    }
+#endif /* HAVE_ECC */
 
     /* Cleanup NVM */
     wh_Nvm_Cleanup(nvm);

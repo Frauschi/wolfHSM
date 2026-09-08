@@ -496,7 +496,8 @@ int wh_Server_ImgMgrVerifyMethodRsaSslWithSha256(
 }
 #endif /* !NO_RSA */
 
-#ifndef NO_RSA
+/* wolfBoot header helpers for RSA4096 and ECC256 methods. */
+#if !defined(NO_RSA) || defined(HAVE_ECC)
 
 /**
  * Find a TLV field in a wolfBoot image header.
@@ -608,6 +609,7 @@ static int _wolfBootImgHashSha256(const uint8_t* hdr,
  * NOTE: Code lifted directly from wolfBoot. Should remain as unmodified as
  * possible for easy diffs
  */
+#ifndef NO_RSA
 static int _wolfBootImgDecodeAsn1Tag(const uint8_t* input, int inputSz,
                                      int* inOutIdx, int* tag_len, uint8_t tag)
 {
@@ -725,6 +727,7 @@ static int _wolfBootImgVerifySigRsa4096(const uint8_t* sig, uint16_t sigSz,
 
     return WH_ERROR_OK;
 }
+#endif /* !NO_RSA */
 
 
 /**
@@ -815,12 +818,10 @@ static int _wolfBootImgPeekImgSize(const uint8_t* hdr, size_t hdrSize,
  * Returns WH_ERROR_OK on success and populates computed_hash.
  * On success, sig_out and sig_sz_out point to the signature in the header.
  */
-static int _wolfBootImgValidateAndHash(const uint8_t* hdr, size_t hdrSize,
-                                       const uint8_t*  payload,
-                                       size_t          payloadSize,
-                                       uint8_t*        computed_hash,
-                                       const uint8_t** sig_out,
-                                       uint16_t* sig_sz_out, int devId)
+static int _wolfBootImgValidateAndHash(
+    const uint8_t* hdr, size_t hdrSize, const uint8_t* payload,
+    size_t payloadSize, uint8_t* computed_hash, const uint8_t** sig_out,
+    uint16_t* sig_sz_out, int devId, uint8_t expected_auth_type)
 {
     uint32_t       magic;
     uint32_t       img_size;
@@ -877,7 +878,7 @@ static int _wolfBootImgValidateAndHash(const uint8_t* hdr, size_t hdrSize,
     auth_type =
         (uint8_t)((image_type & WH_IMG_MGR_WOLFBOOT_HDR_IMG_TYPE_AUTH_MASK) >>
                   8);
-    if (auth_type != WH_IMG_MGR_WOLFBOOT_AUTH_RSA4096) {
+    if (auth_type != expected_auth_type) {
         return WH_ERROR_NOTVERIFIED;
     }
 
@@ -914,6 +915,7 @@ static int _wolfBootImgValidateAndHash(const uint8_t* hdr, size_t hdrSize,
 }
 
 
+#ifndef NO_RSA
 int wh_Server_ImgMgrVerifyMethodWolfBootRsa4096WithSha256(
     whServerImgMgrContext* context, const whServerImgMgrImg* img,
     const uint8_t* key, size_t keySz, const uint8_t* sig, size_t sigSz)
@@ -988,7 +990,7 @@ int wh_Server_ImgMgrVerifyMethodWolfBootRsa4096WithSha256(
     /* Validate header, compute and verify hash, extract signature */
     ret = _wolfBootImgValidateAndHash(hdr, img->hdrSize, payload, payloadSize,
                                       computed_hash, &hdr_sig, &hdr_sig_sz,
-                                      devId);
+                                      devId, WH_IMG_MGR_WOLFBOOT_AUTH_RSA4096);
     if (ret != WH_ERROR_OK) {
         goto cleanup;
     }
@@ -1020,8 +1022,214 @@ cleanup:
 #endif
     return ret;
 }
+#endif /* !NO_RSA */
 
-#ifdef WOLFHSM_CFG_CERTIFICATE_MANAGER
+#ifdef HAVE_ECC
+/* Normalize an ECC P-256 key to raw 64-byte X||Y form.
+ * Accepts raw X||Y or a DER public key. */
+static int _wolfBootImgEcc256KeyToRaw(const uint8_t* key, size_t keySz,
+                                      int devId, uint8_t* rawKey /* [64] */)
+{
+    ecc_key eccKey;
+    word32  qxLen = 32;
+    word32  qyLen = 32;
+    word32  idx   = 0;
+    int     ret;
+
+    if (key == NULL || keySz == 0) {
+        return WH_ERROR_BADARGS;
+    }
+
+    if (keySz == 64) {
+        memcpy(rawKey, key, 64);
+        return WH_ERROR_OK;
+    }
+
+    ret = wc_ecc_init_ex(&eccKey, NULL, devId);
+    if (ret != 0) {
+        return WH_ERROR_ABORTED;
+    }
+    ret = wc_EccPublicKeyDecode(key, &idx, &eccKey, (word32)keySz);
+    if (ret == 0) {
+        /* Export with 32-byte coordinates. */
+        ret = wc_ecc_export_public_raw(&eccKey, rawKey, &qxLen, rawKey + 32,
+                                       &qyLen);
+    }
+    (void)wc_ecc_free(&eccKey);
+
+    if (ret != 0 || qxLen != 32 || qyLen != 32) {
+        return WH_ERROR_NOTVERIFIED;
+    }
+    return WH_ERROR_OK;
+}
+
+/* Verify raw ECC P-256 R||S against a hash. */
+static int _wolfBootImgVerifySigEcc256(const uint8_t* sig, uint16_t sigSz,
+                                       const uint8_t* hash, uint32_t hashSz,
+                                       const uint8_t* pubkey, uint32_t pubkeySz,
+                                       int devId)
+{
+    ecc_key eccKey;
+    uint8_t derSig[ECC_MAX_SIG_SIZE];
+    word32  derSigSz     = sizeof(derSig);
+    int     verifyResult = 0;
+    int     ret;
+
+    /* wolfBoot ECC256 uses raw X||Y keys and raw R||S signatures. */
+    if (sigSz != 64 || pubkeySz != 64) {
+        return WH_ERROR_NOTVERIFIED;
+    }
+
+    ret = wc_ecc_init_ex(&eccKey, NULL, devId);
+    if (ret != 0) {
+        return WH_ERROR_ABORTED;
+    }
+
+    ret = wc_ecc_import_unsigned(&eccKey, pubkey, pubkey + 32, NULL,
+                                 ECC_SECP256R1);
+    if (ret != 0) {
+        (void)wc_ecc_free(&eccKey);
+        return WH_ERROR_ABORTED;
+    }
+
+    /* wc_ecc_verify_hash takes a DER signature. */
+    ret = wc_ecc_rs_raw_to_sig(sig, 32, sig + 32, 32, derSig, &derSigSz);
+    if (ret == 0) {
+        ret = wc_ecc_verify_hash(derSig, derSigSz, hash, hashSz, &verifyResult,
+                                 &eccKey);
+    }
+
+    (void)wc_ecc_free(&eccKey);
+
+    /* An R or S of zero or at least the curve order is an invalid signature.
+     * wolfCrypt reports that as an error instead of a failed check. */
+    if (ret == MP_ZERO_E || ret == MP_VAL) {
+        return WH_ERROR_NOTVERIFIED;
+    }
+    /* Pass other wolfCrypt errors through. */
+    if (ret != 0) {
+        return ret;
+    }
+    if (verifyResult != 1) {
+        return WH_ERROR_NOTVERIFIED;
+    }
+    return WH_ERROR_OK;
+}
+
+int wh_Server_ImgMgrVerifyMethodWolfBootEcc256WithSha256(
+    whServerImgMgrContext* context, const whServerImgMgrImg* img,
+    const uint8_t* key, size_t keySz, const uint8_t* sig, size_t sigSz)
+{
+    int              ret;
+    uint8_t          computed_hash[WC_SHA256_DIGEST_SIZE];
+    uint8_t          raw_key[64];
+    const uint8_t*   hdr;
+    const uint8_t*   payload;
+    const uint8_t*   hdr_sig;
+    uint16_t         hdr_sig_sz;
+    const uint8_t*   pubkey_hint;
+    uint16_t         pubkey_hint_size;
+    size_t           payloadSize;
+    whServerContext* server;
+    int              devId;
+#ifdef WOLFHSM_CFG_DMA
+    void*    serverHdrPtr     = NULL;
+    void*    serverPayloadPtr = NULL;
+    uint32_t peekedImgSize    = 0;
+    int      payloadMapped    = 0;
+#endif
+
+    (void)sig;
+    (void)sigSz;
+
+    if (context == NULL || context->server == NULL || img == NULL ||
+        key == NULL || keySz == 0) {
+        return WH_ERROR_BADARGS;
+    }
+
+    server = context->server;
+    devId  = server->devId;
+
+    /* Normalize the key to raw X||Y. */
+    ret = _wolfBootImgEcc256KeyToRaw(key, keySz, devId, raw_key);
+    if (ret != WH_ERROR_OK) {
+        return ret;
+    }
+
+#ifdef WOLFHSM_CFG_DMA
+    /* Map the header for DMA read. */
+    ret = wh_Server_DmaProcessClientAddress(
+        server, img->hdrAddr, &serverHdrPtr, img->hdrSize,
+        WH_DMA_OPER_CLIENT_READ_PRE, (whServerDmaFlags){0});
+    if (ret != WH_ERROR_OK) {
+        return ret;
+    }
+    hdr = (const uint8_t*)serverHdrPtr;
+
+    /* Map only the image size declared in the header. */
+    ret = _wolfBootImgPeekImgSize(hdr, img->hdrSize, &peekedImgSize);
+    if (ret != WH_ERROR_OK) {
+        goto cleanup;
+    }
+    if ((size_t)peekedImgSize > img->size) {
+        ret = WH_ERROR_BADARGS;
+        goto cleanup;
+    }
+    payloadSize = (size_t)peekedImgSize;
+
+    /* Map the payload for DMA read. */
+    ret = wh_Server_DmaProcessClientAddress(
+        server, img->addr, &serverPayloadPtr, payloadSize,
+        WH_DMA_OPER_CLIENT_READ_PRE, (whServerDmaFlags){0});
+    if (ret != WH_ERROR_OK) {
+        goto cleanup;
+    }
+    payloadMapped = 1;
+    payload       = (const uint8_t*)serverPayloadPtr;
+#else
+    hdr         = (const uint8_t*)img->hdrAddr;
+    payload     = (const uint8_t*)img->addr;
+    payloadSize = img->size;
+#endif
+
+    /* Validate the header and compute the payload hash. */
+    ret = _wolfBootImgValidateAndHash(hdr, img->hdrSize, payload, payloadSize,
+                                      computed_hash, &hdr_sig, &hdr_sig_sz,
+                                      devId, WH_IMG_MGR_WOLFBOOT_AUTH_ECC256);
+    if (ret != WH_ERROR_OK) {
+        goto cleanup;
+    }
+
+    /* Verify the header public-key hint. */
+    pubkey_hint_size = _wolfBootImgFindHeaderField(
+        hdr, img->hdrSize, WH_IMG_MGR_WOLFBOOT_HDR_PUBKEY, &pubkey_hint);
+    ret = _wolfBootImgVerifyPubKeyHint(raw_key, sizeof(raw_key), pubkey_hint,
+                                       pubkey_hint_size, devId);
+    if (ret != WH_ERROR_OK) {
+        goto cleanup;
+    }
+
+    /* Verify the ECC256 signature. */
+    ret = _wolfBootImgVerifySigEcc256(hdr_sig, hdr_sig_sz, computed_hash,
+                                      WC_SHA256_DIGEST_SIZE, raw_key,
+                                      sizeof(raw_key), devId);
+
+cleanup:
+#ifdef WOLFHSM_CFG_DMA
+    if (payloadMapped) {
+        (void)wh_Server_DmaProcessClientAddress(
+            server, img->addr, &serverPayloadPtr, payloadSize,
+            WH_DMA_OPER_CLIENT_READ_POST, (whServerDmaFlags){0});
+    }
+    (void)wh_Server_DmaProcessClientAddress(
+        server, img->hdrAddr, &serverHdrPtr, img->hdrSize,
+        WH_DMA_OPER_CLIENT_READ_POST, (whServerDmaFlags){0});
+#endif
+    return ret;
+}
+#endif /* HAVE_ECC */
+
+#if defined(WOLFHSM_CFG_CERTIFICATE_MANAGER) && !defined(NO_RSA)
 int wh_Server_ImgMgrVerifyMethodWolfBootCertChainRsa4096WithSha256(
     whServerImgMgrContext* context, const whServerImgMgrImg* img,
     const uint8_t* key, size_t keySz, const uint8_t* sig, size_t sigSz)
@@ -1105,7 +1313,7 @@ int wh_Server_ImgMgrVerifyMethodWolfBootCertChainRsa4096WithSha256(
     /* Validate header, compute and verify hash, extract signature */
     ret = _wolfBootImgValidateAndHash(hdr, img->hdrSize, payload, payloadSize,
                                       computed_hash, &hdr_sig, &hdr_sig_sz,
-                                      devId);
+                                      devId, WH_IMG_MGR_WOLFBOOT_AUTH_RSA4096);
     if (ret != WH_ERROR_OK) {
         goto cleanup;
     }
@@ -1164,9 +1372,9 @@ cleanup:
 #endif
     return ret;
 }
-#endif /* WOLFHSM_CFG_CERTIFICATE_MANAGER */
+#endif /* WOLFHSM_CFG_CERTIFICATE_MANAGER && !NO_RSA */
 
-#endif /* !NO_RSA */
+#endif /* !NO_RSA || HAVE_ECC */
 #endif /* !WOLFHSM_CFG_NO_CRYPTO */
 
 int wh_Server_ImgMgrVerifyActionDefault(whServerImgMgrContext*   context,

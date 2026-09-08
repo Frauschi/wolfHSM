@@ -47,6 +47,7 @@
 #define WH_IMG_MGR_WOLFBOOT_HDR_PADDING 0xFF
 
 /* wolfBoot auth key types (from high byte of img_type) */
+#define WH_IMG_MGR_WOLFBOOT_AUTH_ECC256 0x02
 #define WH_IMG_MGR_WOLFBOOT_AUTH_RSA4096 0x04
 #define WH_IMG_MGR_WOLFBOOT_HDR_IMG_TYPE_AUTH_MASK 0xFF00
 
@@ -332,6 +333,25 @@ int wh_Server_ImgMgrVerifyMethodRsaSslWithSha256(
  * failure
  */
 int wh_Server_ImgMgrVerifyMethodWolfBootRsa4096WithSha256(
+    whServerImgMgrContext* context, const whServerImgMgrImg* img,
+    const uint8_t* key, size_t keySz, const uint8_t* sig, size_t sigSz);
+
+/**
+ * @brief wolfBoot ECC256 with SHA256 verification method.
+ *
+ * Verifies a wolfBoot image using an ECC P-256 signature and SHA256 hash.
+ * The public key may be raw 64-byte X||Y or DER.
+ * The signature is read from the wolfBoot header.
+ *
+ * @param[in] context Image manager context.
+ * @param[in] img Image with header and payload addresses.
+ * @param[in] key ECC P-256 public key.
+ * @param[in] keySz Size of key data.
+ * @param[in] sig Unused.
+ * @param[in] sigSz Unused.
+ * @return WH_ERROR_OK on success or a negative error code.
+ */
+int wh_Server_ImgMgrVerifyMethodWolfBootEcc256WithSha256(
     whServerImgMgrContext* context, const whServerImgMgrImg* img,
     const uint8_t* key, size_t keySz, const uint8_t* sig, size_t sigSz);
 

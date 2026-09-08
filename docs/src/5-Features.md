@@ -888,6 +888,7 @@ A verify method returns `WH_ERROR_OK` on a successful verification, `WH_ERROR_NO
 - `wh_Server_ImgMgrVerifyMethodRsaSslWithSha256`: RSA PKCS#1 v1.5 signature over the SHA-256 hash of the image
 - `wh_Server_ImgMgrVerifyMethodAesCmac`: AES-128 CMAC over the image bytes
 - `wh_Server_ImgMgrVerifyMethodWolfBootRsa4096WithSha256`: RSA-4096 verification of a wolfBoot-formatted image (see [wolfBoot Image Support](#wolfboot-image-support))
+- `wh_Server_ImgMgrVerifyMethodWolfBootEcc256WithSha256`: ECDSA P-256 verification of a wolfBoot-formatted image
 - `wh_Server_ImgMgrVerifyMethodWolfBootCertChainRsa4096WithSha256`: cert-chain-based RSA-4096 verification of a wolfBoot image
 
 Applications can supply their own verify method to support algorithms not represented in the built-in set, or to layer additional checks on top of an existing one — for example, validating a monotonic counter against a [non-volatile counter](#non-volatile-monotonic-counters) inside a wrapper verify method to add anti-rollback protection. The maximum signature size handled by the framework is `WOLFHSM_CFG_SERVER_IMG_MGR_MAX_SIG_SIZE`, whose default accommodates RSA-4096.
@@ -910,7 +911,7 @@ A default no-op action, `wh_Server_ImgMgrVerifyActionDefault`, is provided for c
 
 wolfHSM understands the [wolfBoot](https://github.com/wolfSSL/wolfBoot) image header format natively so that a wolfHSM-equipped system can serve as the verifier for a wolfBoot-staged image without the client having to parse the header itself. Two wolfBoot image types are recognized:
 
-- `WH_IMG_MGR_IMG_TYPE_WOLFBOOT`: the signature is extracted from the wolfBoot TLV header and verified against a key resident in the server's keystore (identified by `keyId`). This corresponds to the standard wolfBoot signing model where the signing key is known in advance and provisioned into the HSM.
+- `WH_IMG_MGR_IMG_TYPE_WOLFBOOT`: the signature is extracted from the wolfBoot TLV header and verified against a key resident in the server's keystore (identified by `keyId`). This corresponds to the standard wolfBoot signing model where the signing key is known in advance and provisioned into the HSM. Pair it with the verify method that matches how the image was signed, `wh_Server_ImgMgrVerifyMethodWolfBootRsa4096WithSha256` or `wh_Server_ImgMgrVerifyMethodWolfBootEcc256WithSha256`. Each method rejects a header whose auth type does not match its algorithm.
 - `WH_IMG_MGR_IMG_TYPE_WOLFBOOT_CERT`: the image carries a certificate chain inside its wolfBoot header; the chain is verified against a trusted root in NVM (identified by `sigNvmId`) using the [certificate manager](#certificate-management), and the leaf certificate's public key is then used to verify the image signature. This matches the wolfBoot cert-chain mode and is the right choice when the signing key is rotated independently of the on-device trust anchor.
 
 In both cases the framework parses the header at `hdrAddr`, locates the signature TLV, validates the wolfBoot magic and public key hint, and feeds the appropriate `(image, key, signature)` triple into the wolfBoot verify method. The application's `verifyAction` is invoked exactly as for a raw image.
