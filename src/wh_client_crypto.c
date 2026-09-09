@@ -6906,10 +6906,53 @@ int wh_Client_Sha256FinalResponse(whClientContext* ctx, wc_Sha256* sha,
     return ret;
 }
 
+/* Snapshot of the streaming state the offload path mutates: the intermediate
+ * digest, the locally buffered partial block and the length counters. */
+typedef struct {
+    word32 digest[WC_SHA256_DIGEST_SIZE / sizeof(word32)];
+    word32 buffer[WC_SHA256_BLOCK_SIZE / sizeof(word32)];
+    word32 buffLen;
+    word32 loLen;
+    word32 hiLen;
+} _Sha256SavedState;
+
+static void _Sha256SaveState(const wc_Sha256* sha, _Sha256SavedState* saved)
+{
+    memcpy(saved->digest, sha->digest, sizeof(saved->digest));
+    memcpy(saved->buffer, sha->buffer, sizeof(saved->buffer));
+    saved->buffLen = sha->buffLen;
+    saved->loLen   = sha->loLen;
+    saved->hiLen   = sha->hiLen;
+}
+
+static void _Sha256RestoreState(wc_Sha256* sha, const _Sha256SavedState* saved)
+{
+    memcpy(sha->digest, saved->digest, sizeof(saved->digest));
+    memcpy(sha->buffer, saved->buffer, sizeof(saved->buffer));
+    sha->buffLen = saved->buffLen;
+    sha->loLen   = saved->loLen;
+    sha->hiLen   = saved->hiLen;
+}
+
 int wh_Client_Sha256(whClientContext* ctx, wc_Sha256* sha256, const uint8_t* in,
                      uint32_t inLen, uint8_t* out)
 {
     int ret = WH_ERROR_OK;
+    _Sha256SavedState saved;
+
+    /* Validated here rather than in the helpers below, because
+     * _Sha256SaveState dereferences it immediately. */
+    if (ctx == NULL || sha256 == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    /* A server built without SHA-256 answers NOT_COMPILED_IN, which
+     * wolfCrypt maps to CRYPTOCB_UNAVAILABLE and re-hashes the same input
+     * in software. The update path has by then consumed part of that input
+     * into sha->buffer without loLen following it, so the fallback would
+     * pad to the wrong length. Snapshot so it starts from what the caller
+     * passed. */
+    _Sha256SaveState(sha256, &saved);
 
     /* Caller invoked SHA Update:
      * wc_CryptoCb_Sha256Hash(sha256, data, len, NULL) */
@@ -6947,6 +6990,13 @@ int wh_Client_Sha256(whClientContext* ctx, wc_Sha256* sha256, const uint8_t* in,
                 ret = wh_Client_Sha256FinalResponse(ctx, sha256, out);
             } while (ret == WH_ERROR_NOTREADY);
         }
+    }
+
+    /* Leave the context as the caller passed it so a fallback starts
+     * clean. The server holds no state between requests, so there is
+     * nothing on its side to unwind. */
+    if (ret != WH_ERROR_OK) {
+        _Sha256RestoreState(sha256, &saved);
     }
 
     return ret;
@@ -7237,6 +7287,21 @@ int wh_Client_Sha256Dma(whClientContext* ctx, wc_Sha256* sha, const uint8_t* in,
                         uint32_t inLen, uint8_t* out)
 {
     int ret = WH_ERROR_OK;
+    _Sha256SavedState saved;
+
+    /* Validated here rather than in the helpers below, because
+     * _Sha256SaveState dereferences it immediately. */
+    if (ctx == NULL || sha == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    /* A server built without SHA-256 answers NOT_COMPILED_IN, which
+     * wolfCrypt maps to CRYPTOCB_UNAVAILABLE and re-hashes the same input
+     * in software. The update path has by then consumed part of that input
+     * into sha->buffer without loLen following it, so the fallback would
+     * pad to the wrong length. Snapshot so it starts from what the caller
+     * passed. */
+    _Sha256SaveState(sha, &saved);
 
     if (in != NULL && inLen > 0) {
         bool sent = false;
@@ -7255,6 +7320,13 @@ int wh_Client_Sha256Dma(whClientContext* ctx, wc_Sha256* sha, const uint8_t* in,
             } while (ret == WH_ERROR_NOTREADY);
         }
     }
+    /* Leave the context as the caller passed it so a fallback starts
+     * clean. The server holds no state between requests, so there is
+     * nothing on its side to unwind. */
+    if (ret != WH_ERROR_OK) {
+        _Sha256RestoreState(sha, &saved);
+    }
+
     return ret;
 }
 #endif /* WOLFHSM_CFG_DMA */
@@ -7845,6 +7917,36 @@ int wh_Client_Sha224Dma(whClientContext* ctx, wc_Sha224* sha, const uint8_t* in,
 #endif /* WOLFHSM_CFG_DMA */
 #endif /* WOLFSSL_SHA224 */
 
+#if defined(WOLFSSL_SHA384) || defined(WOLFSSL_SHA512)
+/* Shared by SHA-384 and SHA-512, which are the same wolfCrypt structure.
+ * Snapshot of the streaming state the offload path mutates. */
+typedef struct {
+    word64 digest[WC_SHA512_DIGEST_SIZE / sizeof(word64)];
+    word64 buffer[WC_SHA512_BLOCK_SIZE / sizeof(word64)];
+    word32 buffLen;
+    word64 loLen;
+    word64 hiLen;
+} _Sha512SavedState;
+
+static void _Sha512SaveState(const wc_Sha512* sha, _Sha512SavedState* saved)
+{
+    memcpy(saved->digest, sha->digest, sizeof(saved->digest));
+    memcpy(saved->buffer, sha->buffer, sizeof(saved->buffer));
+    saved->buffLen = sha->buffLen;
+    saved->loLen   = sha->loLen;
+    saved->hiLen   = sha->hiLen;
+}
+
+static void _Sha512RestoreState(wc_Sha512* sha, const _Sha512SavedState* saved)
+{
+    memcpy(sha->digest, saved->digest, sizeof(saved->digest));
+    memcpy(sha->buffer, saved->buffer, sizeof(saved->buffer));
+    sha->buffLen = saved->buffLen;
+    sha->loLen   = saved->loLen;
+    sha->hiLen   = saved->hiLen;
+}
+#endif /* WOLFSSL_SHA384 || WOLFSSL_SHA512 */
+
 #ifdef WOLFSSL_SHA384
 
 /* Maximum number of input bytes that wh_Client_Sha384UpdateRequest can absorb
@@ -8100,6 +8202,21 @@ int wh_Client_Sha384(whClientContext* ctx, wc_Sha384* sha384, const uint8_t* in,
                      uint32_t inLen, uint8_t* out)
 {
     int ret = WH_ERROR_OK;
+    _Sha512SavedState saved;
+
+    /* Validated here rather than in the helpers below, because
+     * _Sha512SaveState dereferences it immediately. */
+    if (ctx == NULL || sha384 == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    /* A server built without SHA-384 answers NOT_COMPILED_IN, which
+     * wolfCrypt maps to CRYPTOCB_UNAVAILABLE and re-hashes the same input
+     * in software. The update path has by then consumed part of that input
+     * into sha->buffer without loLen following it, so the fallback would
+     * pad to the wrong length. Snapshot so it starts from what the caller
+     * passed. */
+    _Sha512SaveState(sha384, &saved);
 
     /* Caller invoked SHA Update:
      * wc_CryptoCb_Sha384Hash(sha384, data, len, NULL) */
@@ -8137,6 +8254,13 @@ int wh_Client_Sha384(whClientContext* ctx, wc_Sha384* sha384, const uint8_t* in,
                 ret = wh_Client_Sha384FinalResponse(ctx, sha384, out);
             } while (ret == WH_ERROR_NOTREADY);
         }
+    }
+
+    /* Leave the context as the caller passed it so a fallback starts
+     * clean. The server holds no state between requests, so there is
+     * nothing on its side to unwind. */
+    if (ret != WH_ERROR_OK) {
+        _Sha512RestoreState(sha384, &saved);
     }
 
     return ret;
@@ -8411,6 +8535,21 @@ int wh_Client_Sha384Dma(whClientContext* ctx, wc_Sha384* sha, const uint8_t* in,
                         uint32_t inLen, uint8_t* out)
 {
     int ret = WH_ERROR_OK;
+    _Sha512SavedState saved;
+
+    /* Validated here rather than in the helpers below, because
+     * _Sha512SaveState dereferences it immediately. */
+    if (ctx == NULL || sha == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    /* A server built without SHA-384 answers NOT_COMPILED_IN, which
+     * wolfCrypt maps to CRYPTOCB_UNAVAILABLE and re-hashes the same input
+     * in software. The update path has by then consumed part of that input
+     * into sha->buffer without loLen following it, so the fallback would
+     * pad to the wrong length. Snapshot so it starts from what the caller
+     * passed. */
+    _Sha512SaveState(sha, &saved);
 
     if (in != NULL && inLen > 0) {
         bool sent = false;
@@ -8429,6 +8568,13 @@ int wh_Client_Sha384Dma(whClientContext* ctx, wc_Sha384* sha, const uint8_t* in,
             } while (ret == WH_ERROR_NOTREADY);
         }
     }
+    /* Leave the context as the caller passed it so a fallback starts
+     * clean. The server holds no state between requests, so there is
+     * nothing on its side to unwind. */
+    if (ret != WH_ERROR_OK) {
+        _Sha512RestoreState(sha, &saved);
+    }
+
     return ret;
 }
 #endif /* WOLFHSM_CFG_DMA */
@@ -8718,6 +8864,21 @@ int wh_Client_Sha512(whClientContext* ctx, wc_Sha512* sha512, const uint8_t* in,
                      uint32_t inLen, uint8_t* out)
 {
     int ret = WH_ERROR_OK;
+    _Sha512SavedState saved;
+
+    /* Validated here rather than in the helpers below, because
+     * _Sha512SaveState dereferences it immediately. */
+    if (ctx == NULL || sha512 == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    /* A server built without SHA-512 answers NOT_COMPILED_IN, which
+     * wolfCrypt maps to CRYPTOCB_UNAVAILABLE and re-hashes the same input
+     * in software. The update path has by then consumed part of that input
+     * into sha->buffer without loLen following it, so the fallback would
+     * pad to the wrong length. Snapshot so it starts from what the caller
+     * passed. */
+    _Sha512SaveState(sha512, &saved);
 
     /* Caller invoked SHA Update:
      * wc_CryptoCb_Sha512Hash(sha512, data, len, NULL) */
@@ -8755,6 +8916,13 @@ int wh_Client_Sha512(whClientContext* ctx, wc_Sha512* sha512, const uint8_t* in,
                 ret = wh_Client_Sha512FinalResponse(ctx, sha512, out);
             } while (ret == WH_ERROR_NOTREADY);
         }
+    }
+
+    /* Leave the context as the caller passed it so a fallback starts
+     * clean. The server holds no state between requests, so there is
+     * nothing on its side to unwind. */
+    if (ret != WH_ERROR_OK) {
+        _Sha512RestoreState(sha512, &saved);
     }
 
     return ret;
@@ -9062,6 +9230,21 @@ int wh_Client_Sha512Dma(whClientContext* ctx, wc_Sha512* sha, const uint8_t* in,
                         uint32_t inLen, uint8_t* out)
 {
     int ret = WH_ERROR_OK;
+    _Sha512SavedState saved;
+
+    /* Validated here rather than in the helpers below, because
+     * _Sha512SaveState dereferences it immediately. */
+    if (ctx == NULL || sha == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    /* A server built without SHA-512 answers NOT_COMPILED_IN, which
+     * wolfCrypt maps to CRYPTOCB_UNAVAILABLE and re-hashes the same input
+     * in software. The update path has by then consumed part of that input
+     * into sha->buffer without loLen following it, so the fallback would
+     * pad to the wrong length. Snapshot so it starts from what the caller
+     * passed. */
+    _Sha512SaveState(sha, &saved);
 
     if (in != NULL && inLen > 0) {
         bool sent = false;
@@ -9080,6 +9263,13 @@ int wh_Client_Sha512Dma(whClientContext* ctx, wc_Sha512* sha, const uint8_t* in,
             } while (ret == WH_ERROR_NOTREADY);
         }
     }
+    /* Leave the context as the caller passed it so a fallback starts
+     * clean. The server holds no state between requests, so there is
+     * nothing on its side to unwind. */
+    if (ret != WH_ERROR_OK) {
+        _Sha512RestoreState(sha, &saved);
+    }
+
     return ret;
 }
 #endif /* WOLFHSM_CFG_DMA  */
