@@ -6673,6 +6673,13 @@ static uint32_t _Sha256UpdatePerCallCapacity(const wc_Sha256* sha)
            (uint32_t)(WC_SHA256_BLOCK_SIZE - 1u - sha->buffLen);
 }
 
+/* True when nothing has been sent for this context yet, so the locally
+ * buffered tail is the whole message and the server can hash it fresh. */
+static int _Sha2IsFreshContext(uint32_t loLen, uint32_t hiLen)
+{
+    return ((loLen == 0) && (hiLen == 0)) ? 1 : 0;
+}
+
 int wh_Client_Sha256UpdateRequest(whClientContext* ctx, wc_Sha256* sha,
                                   const uint8_t* in, uint32_t inLen,
                                   bool* requestSent)
@@ -6763,6 +6770,7 @@ int wh_Client_Sha256UpdateRequest(whClientContext* ctx, wc_Sha256* sha,
 
     /* Populate fixed request fields */
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     memcpy(req->resumeState.hash, sha->digest, WC_SHA256_DIGEST_SIZE);
     req->resumeState.hiLen = sha->hiLen;
@@ -6853,6 +6861,7 @@ int wh_Client_Sha256FinalRequest(whClientContext* ctx, wc_Sha256* sha)
     memcpy(req->resumeState.hash, sha->digest, WC_SHA256_DIGEST_SIZE);
     req->resumeState.hiLen = sha->hiLen;
     req->resumeState.loLen = sha->loLen;
+    req->wholeMessage = _Sha2IsFreshContext(sha->loLen, sha->hiLen);
 
     if (sha->buffLen > 0) {
         memcpy(inlineData, sha->buffer, sha->buffLen);
@@ -7086,6 +7095,7 @@ int wh_Client_Sha256DmaUpdateRequest(whClientContext* ctx, wc_Sha256* sha,
 
     /* Populate request fields */
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     memcpy(req->resumeState.hash, sha->digest, WC_SHA256_DIGEST_SIZE);
     req->resumeState.hiLen = sha->hiLen;
@@ -7222,6 +7232,7 @@ int wh_Client_Sha256DmaFinalRequest(whClientContext* ctx, wc_Sha256* sha)
     memcpy(req->resumeState.hash, sha->digest, WC_SHA256_DIGEST_SIZE);
     req->resumeState.hiLen = sha->hiLen;
     req->resumeState.loLen = sha->loLen;
+    req->wholeMessage = _Sha2IsFreshContext(sha->loLen, sha->hiLen);
     req->input.sz          = 0;
     req->input.addr        = 0;
 
@@ -7436,6 +7447,7 @@ int wh_Client_Sha224UpdateRequest(whClientContext* ctx, wc_Sha224* sha,
      * SHA256 digest size (32 bytes) on the wire; the final truncation to
      * WC_SHA224_DIGEST_SIZE happens only in FinalResponse. */
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     memcpy(req->resumeState.hash, sha->digest, WC_SHA256_DIGEST_SIZE);
     req->resumeState.hiLen = sha->hiLen;
@@ -7527,6 +7539,7 @@ int wh_Client_Sha224FinalRequest(whClientContext* ctx, wc_Sha224* sha)
     memcpy(req->resumeState.hash, sha->digest, WC_SHA256_DIGEST_SIZE);
     req->resumeState.hiLen = sha->hiLen;
     req->resumeState.loLen = sha->loLen;
+    req->wholeMessage = _Sha2IsFreshContext(sha->loLen, sha->hiLen);
 
     if (sha->buffLen > 0) {
         memcpy(inlineData, sha->buffer, sha->buffLen);
@@ -7703,6 +7716,7 @@ int wh_Client_Sha224DmaUpdateRequest(whClientContext* ctx, wc_Sha224* sha,
     }
 
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     /* SHA224 shares SHA256's internal 32-byte digest state */
     memcpy(req->resumeState.hash, sha->digest, WC_SHA256_DIGEST_SIZE);
@@ -7834,6 +7848,7 @@ int wh_Client_Sha224DmaFinalRequest(whClientContext* ctx, wc_Sha224* sha)
     memcpy(req->resumeState.hash, sha->digest, WC_SHA256_DIGEST_SIZE);
     req->resumeState.hiLen = sha->hiLen;
     req->resumeState.loLen = sha->loLen;
+    req->wholeMessage = _Sha2IsFreshContext(sha->loLen, sha->hiLen);
     req->input.sz          = 0;
     req->input.addr        = 0;
 
@@ -8051,6 +8066,7 @@ int wh_Client_Sha384UpdateRequest(whClientContext* ctx, wc_Sha384* sha,
      * SHA512 digest size (64 bytes) on the wire; the final truncation to
      * WC_SHA384_DIGEST_SIZE happens only in FinalResponse. */
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     memcpy(req->resumeState.hash, sha->digest, WC_SHA512_DIGEST_SIZE);
     req->resumeState.hiLen    = sha->hiLen;
@@ -8143,6 +8159,7 @@ int wh_Client_Sha384FinalRequest(whClientContext* ctx, wc_Sha384* sha)
     memcpy(req->resumeState.hash, sha->digest, WC_SHA512_DIGEST_SIZE);
     req->resumeState.hiLen    = sha->hiLen;
     req->resumeState.loLen    = sha->loLen;
+    req->wholeMessage = _Sha2IsFreshContext(sha->loLen, sha->hiLen);
     req->resumeState.hashType = WC_HASH_TYPE_SHA384;
 
     if (sha->buffLen > 0) {
@@ -8342,6 +8359,7 @@ int wh_Client_Sha384DmaUpdateRequest(whClientContext* ctx, wc_Sha384* sha,
     }
 
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     /* SHA384 shares SHA512's internal 64-byte digest state */
     memcpy(req->resumeState.hash, sha->digest, WC_SHA512_DIGEST_SIZE);
@@ -8474,6 +8492,7 @@ int wh_Client_Sha384DmaFinalRequest(whClientContext* ctx, wc_Sha384* sha)
     memcpy(req->resumeState.hash, sha->digest, WC_SHA512_DIGEST_SIZE);
     req->resumeState.hiLen    = sha->hiLen;
     req->resumeState.loLen    = sha->loLen;
+    req->wholeMessage = _Sha2IsFreshContext(sha->loLen, sha->hiLen);
     req->resumeState.hashType = WC_HASH_TYPE_SHA384;
     req->input.sz             = 0;
     req->input.addr           = 0;
@@ -8683,6 +8702,7 @@ int wh_Client_Sha512UpdateRequest(whClientContext* ctx, wc_Sha512* sha,
 
     /* Populate fixed request fields */
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     memcpy(req->resumeState.hash, sha->digest, WC_SHA512_DIGEST_SIZE);
     req->resumeState.hiLen    = sha->hiLen;
@@ -8780,6 +8800,7 @@ int wh_Client_Sha512FinalRequest(whClientContext* ctx, wc_Sha512* sha)
     memcpy(req->resumeState.hash, sha->digest, WC_SHA512_DIGEST_SIZE);
     req->resumeState.hiLen    = sha->hiLen;
     req->resumeState.loLen    = sha->loLen;
+    req->wholeMessage = _Sha2IsFreshContext(sha->loLen, sha->hiLen);
     req->resumeState.hashType = sha->hashType;
 
     if (sha->buffLen > 0) {
@@ -9004,6 +9025,7 @@ int wh_Client_Sha512DmaUpdateRequest(whClientContext* ctx, wc_Sha512* sha,
     }
 
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     memcpy(req->resumeState.hash, sha->digest, WC_SHA512_DIGEST_SIZE);
     req->resumeState.hiLen    = sha->hiLen;
@@ -9140,6 +9162,7 @@ int wh_Client_Sha512DmaFinalRequest(whClientContext* ctx, wc_Sha512* sha)
     memcpy(req->resumeState.hash, sha->digest, WC_SHA512_DIGEST_SIZE);
     req->resumeState.hiLen    = sha->hiLen;
     req->resumeState.loLen    = sha->loLen;
+    req->wholeMessage = _Sha2IsFreshContext(sha->loLen, sha->hiLen);
     req->resumeState.hashType = sha->hashType;
     req->input.sz             = 0;
     req->input.addr           = 0;
@@ -9324,6 +9347,20 @@ static uint32_t _Sha3UpdatePerCallCapacity(const wc_Sha3*       sha,
  * Keccak-flagged context would silently produce a wrong digest. The cryptocb
  * path falls back to software for this case; the direct API has no fallback
  * so it must refuse the call. */
+/* True when no update has been sent for this context, so the Keccak state is
+ * still all zero and the buffered tail is the whole message. */
+static int _Sha3StateIsInitial(const wc_Sha3* sha)
+{
+    size_t i;
+
+    for (i = 0; i < (sizeof(sha->s) / sizeof(sha->s[0])); i++) {
+        if (sha->s[i] != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int _Sha3RejectKeccak(const wc_Sha3* sha)
 {
 #ifdef WOLFSSL_HASH_FLAGS
@@ -9418,6 +9455,7 @@ static int _Sha3UpdateRequest(whClientContext* ctx, wc_Sha3* sha,
     }
 
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     memcpy(req->resumeState.s, sha->s, sizeof(req->resumeState.s));
 
@@ -9501,6 +9539,7 @@ static int _Sha3FinalRequest(whClientContext* ctx, wc_Sha3* sha,
     inlineData = (uint8_t*)(req + 1);
 
     req->isLastBlock = 1;
+    req->wholeMessage = _Sha3StateIsInitial(sha);
     req->inSz        = sha->i;
     memcpy(req->resumeState.s, sha->s, sizeof(req->resumeState.s));
     if (sha->i > 0) {
@@ -9849,6 +9888,7 @@ static int _Sha3DmaUpdateRequest(whClientContext* ctx, wc_Sha3* sha,
     }
 
     req->isLastBlock = 0;
+    req->wholeMessage = 0;
     req->inSz        = wirePos;
     memcpy(req->resumeState.s, sha->s, sizeof(req->resumeState.s));
     req->input.sz   = dmaSz;
@@ -9971,6 +10011,7 @@ static int _Sha3DmaFinalRequest(whClientContext* ctx, wc_Sha3* sha,
     inlineData = (uint8_t*)(req + 1);
 
     req->isLastBlock = 1;
+    req->wholeMessage = _Sha3StateIsInitial(sha);
     req->inSz        = sha->i;
     memcpy(req->resumeState.s, sha->s, sizeof(req->resumeState.s));
     req->input.sz   = 0;

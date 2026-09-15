@@ -815,6 +815,9 @@ typedef struct {
     uint32_t isLastBlock;
     /* Number of input bytes trailing this struct. */
     uint32_t inSz;
+    /* 1 = inSz carries the complete message and resumeState is unused, so the
+     * server hashes it on a fresh context and may dispatch to its device. */
+    uint32_t wholeMessage;
 } whMessageCrypto_Sha256Request;
 
 /* Maximum number of input bytes that can be carried inline (after the generic
@@ -871,6 +874,9 @@ typedef struct {
     uint32_t isLastBlock;
     /* Number of input bytes trailing this struct. */
     uint32_t inSz;
+    /* 1 = inSz carries the complete message and resumeState holds no state,
+     * though resumeState.hashType still selects the SHA512 variant. */
+    uint32_t wholeMessage;
 } whMessageCrypto_Sha512Request;
 
 /* Maximum number of input bytes that can be carried inline (after the generic
@@ -945,6 +951,9 @@ typedef struct {
     uint32_t                  isLastBlock;
     uint32_t                  inSz;
     whMessageCrypto_Sha3State resumeState;
+    /* 1 = inSz carries the complete message and resumeState is unused. */
+    uint32_t                  wholeMessage;
+    uint8_t                   WH_PAD[4];
 } whMessageCrypto_Sha3Request;
 
 /* SHA3 Response. On non-final updates, carries the updated Keccak state.
@@ -1319,6 +1328,10 @@ typedef struct {
     whMessageCrypto_DmaBuffer input; /* DMA whole blocks (Update only) */
     uint32_t                  isLastBlock;
     uint32_t                  inSz; /* inline trailing data size */
+    /* 1 = the inline bytes followed by the DMA buffer are the complete
+     * message and resumeState is unused; neither length is constrained. */
+    uint32_t                  wholeMessage;
+    uint8_t                   WH_PAD[4];
 } whMessageCrypto_Sha256DmaRequest;
 
 /* SHA512/SHA384 DMA Request */
@@ -1333,6 +1346,11 @@ typedef struct {
     whMessageCrypto_DmaBuffer input;
     uint32_t                  isLastBlock;
     uint32_t                  inSz;
+    /* 1 = the inline bytes followed by the DMA buffer are the complete
+     * message; only resumeState.hashType is still read, to select the
+     * SHA512 variant. */
+    uint32_t                  wholeMessage;
+    uint8_t                   WH_PAD[4];
 } whMessageCrypto_Sha512DmaRequest;
 
 /* SHA2 DMA Response - carries updated state or final hash inline.
@@ -1380,6 +1398,10 @@ typedef struct {
     uint32_t                  isLastBlock;
     uint32_t                  inSz;
     whMessageCrypto_Sha3State resumeState;
+    /* 1 = the inline bytes followed by the DMA buffer are the complete
+     * message and resumeState is unused. */
+    uint32_t                  wholeMessage;
+    uint8_t                   WH_PAD[4];
 } whMessageCrypto_Sha3DmaRequest;
 
 /* SHA3 DMA Response - carries updated state or final hash inline */

@@ -4642,6 +4642,7 @@ static int _HandleSha256(whServerContext* ctx, uint16_t magic, int devId,
                          void* cryptoDataOut, uint16_t* outSize)
 {
     int                           ret = 0;
+    int                           hashDevId;
     wc_Sha256                     sha256[1];
     whMessageCrypto_Sha256Request req;
     whMessageCrypto_Sha2Response  res = {0};
@@ -4662,35 +4663,47 @@ static int _HandleSha256(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     /* Validate inSz fits inside the received payload */
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha256Request))) {
         return WH_ERROR_BADARGS;
     }
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
+        return WH_ERROR_BADARGS;
+    }
     /* Non-final updates must be multiples of WC_SHA256_BLOCK_SIZE */
-    if (!req.isLastBlock && (req.inSz % WC_SHA256_BLOCK_SIZE) != 0) {
+    if (!req.wholeMessage && !req.isLastBlock &&
+        (req.inSz % WC_SHA256_BLOCK_SIZE) != 0) {
         return WH_ERROR_BADARGS;
     }
     /* Final block must be strictly less than one block (client always buffers
      * full blocks and sends only the partial tail on finalize). */
-    if (req.isLastBlock && req.inSz >= WC_SHA256_BLOCK_SIZE) {
+    if (!req.wholeMessage && req.isLastBlock &&
+        req.inSz >= WC_SHA256_BLOCK_SIZE) {
         return WH_ERROR_BADARGS;
     }
 
     inData =
         (const uint8_t*)cryptoDataIn + sizeof(whMessageCrypto_Sha256Request);
 
-    /* always init sha2 struct with the devid */
-    ret = wc_InitSha256_ex(sha256, NULL, devId);
+    ret = wc_InitSha256_ex(sha256, NULL, hashDevId);
     if (ret != 0) {
         return ret;
     }
 
     /* Restore intermediate state from client; server is stateless otherwise.
      * The partial-block buffer lives only on the client. */
-    memcpy(sha256->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
-    sha256->loLen   = req.resumeState.loLen;
-    sha256->hiLen   = req.resumeState.hiLen;
+    if (!req.wholeMessage) {
+        memcpy(sha256->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
+        sha256->loLen   = req.resumeState.loLen;
+        sha256->hiLen   = req.resumeState.hiLen;
+    }
     sha256->buffLen = 0;
 
     if (req.inSz > 0) {
@@ -4734,6 +4747,7 @@ static int _HandleSha224(whServerContext* ctx, uint16_t magic, int devId,
                          void* cryptoDataOut, uint16_t* outSize)
 {
     int                           ret = 0;
+    int                           hashDevId;
     wc_Sha224                     sha224[1];
     whMessageCrypto_Sha256Request req;
     whMessageCrypto_Sha2Response  res = {0};
@@ -4754,33 +4768,46 @@ static int _HandleSha224(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     /* Validate inSz fits inside the received payload */
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha256Request))) {
         return WH_ERROR_BADARGS;
     }
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
+        return WH_ERROR_BADARGS;
+    }
     /* Non-final updates must be multiples of WC_SHA224_BLOCK_SIZE */
-    if (!req.isLastBlock && (req.inSz % WC_SHA224_BLOCK_SIZE) != 0) {
+    if (!req.wholeMessage && !req.isLastBlock &&
+        (req.inSz % WC_SHA224_BLOCK_SIZE) != 0) {
         return WH_ERROR_BADARGS;
     }
     /* Final block must be strictly less than one block */
-    if (req.isLastBlock && req.inSz >= WC_SHA224_BLOCK_SIZE) {
+    if (!req.wholeMessage && req.isLastBlock &&
+        req.inSz >= WC_SHA224_BLOCK_SIZE) {
         return WH_ERROR_BADARGS;
     }
 
     inData =
         (const uint8_t*)cryptoDataIn + sizeof(whMessageCrypto_Sha256Request);
 
-    ret = wc_InitSha224_ex(sha224, NULL, devId);
+    ret = wc_InitSha224_ex(sha224, NULL, hashDevId);
     if (ret != 0) {
         return ret;
     }
     /* sha224 is a part of sha256. It expects to have sha256 digest size of
      * intermediate hash data.
      */
-    memcpy(sha224->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
-    sha224->loLen   = req.resumeState.loLen;
-    sha224->hiLen   = req.resumeState.hiLen;
+    if (!req.wholeMessage) {
+        memcpy(sha224->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
+        sha224->loLen   = req.resumeState.loLen;
+        sha224->hiLen   = req.resumeState.hiLen;
+    }
     sha224->buffLen = 0;
 
     if (req.inSz > 0) {
@@ -4825,6 +4852,7 @@ static int _HandleSha384(whServerContext* ctx, uint16_t magic, int devId,
                          void* cryptoDataOut, uint16_t* outSize)
 {
     int                           ret = 0;
+    int                           hashDevId;
     wc_Sha384                     sha384[1];
     whMessageCrypto_Sha512Request req;
     whMessageCrypto_Sha2Response  res = {0};
@@ -4845,26 +4873,36 @@ static int _HandleSha384(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     /* Validate inSz fits inside the received payload */
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha512Request))) {
         return WH_ERROR_BADARGS;
     }
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
+        return WH_ERROR_BADARGS;
+    }
     /* Non-final updates must be multiples of WC_SHA384_BLOCK_SIZE */
-    if (!req.isLastBlock && (req.inSz % WC_SHA384_BLOCK_SIZE) != 0) {
+    if (!req.wholeMessage && !req.isLastBlock &&
+        (req.inSz % WC_SHA384_BLOCK_SIZE) != 0) {
         return WH_ERROR_BADARGS;
     }
     /* Final block must be strictly less than one block (client always buffers
      * full blocks and sends only the partial tail on finalize). */
-    if (req.isLastBlock && req.inSz >= WC_SHA384_BLOCK_SIZE) {
+    if (!req.wholeMessage && req.isLastBlock &&
+        req.inSz >= WC_SHA384_BLOCK_SIZE) {
         return WH_ERROR_BADARGS;
     }
 
     inData =
         (const uint8_t*)cryptoDataIn + sizeof(whMessageCrypto_Sha512Request);
 
-    /* init sha2 struct with the devid */
-    ret = wc_InitSha384_ex(sha384, NULL, devId);
+    ret = wc_InitSha384_ex(sha384, NULL, hashDevId);
     if (ret != 0) {
         return ret;
     }
@@ -4873,9 +4911,11 @@ static int _HandleSha384(whServerContext* ctx, uint16_t magic, int devId,
      * The partial-block buffer lives only on the client.
      * sha384 is a part of sha512. It expects to have sha512 digest
      * size of intermediate hash data. */
-    memcpy(sha384->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
-    sha384->loLen   = req.resumeState.loLen;
-    sha384->hiLen   = req.resumeState.hiLen;
+    if (!req.wholeMessage) {
+        memcpy(sha384->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
+        sha384->loLen   = req.resumeState.loLen;
+        sha384->hiLen   = req.resumeState.hiLen;
+    }
     sha384->buffLen = 0;
 
     if (req.inSz > 0) {
@@ -4920,6 +4960,7 @@ static int _HandleSha512(whServerContext* ctx, uint16_t magic, int devId,
                          void* cryptoDataOut, uint16_t* outSize)
 {
     int                           ret = 0;
+    int                           hashDevId;
     wc_Sha512                     sha512[1];
     whMessageCrypto_Sha512Request req;
     whMessageCrypto_Sha2Response  res      = {0};
@@ -4939,41 +4980,52 @@ static int _HandleSha512(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     /* Validate inSz fits inside the received payload */
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha512Request))) {
         return WH_ERROR_BADARGS;
     }
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
+        return WH_ERROR_BADARGS;
+    }
     /* Non-final updates must be multiples of WC_SHA512_BLOCK_SIZE */
-    if (!req.isLastBlock && (req.inSz % WC_SHA512_BLOCK_SIZE) != 0) {
+    if (!req.wholeMessage && !req.isLastBlock &&
+        (req.inSz % WC_SHA512_BLOCK_SIZE) != 0) {
         return WH_ERROR_BADARGS;
     }
     /* Final block must be strictly less than one block */
-    if (req.isLastBlock && req.inSz >= WC_SHA512_BLOCK_SIZE) {
+    if (!req.wholeMessage && req.isLastBlock &&
+        req.inSz >= WC_SHA512_BLOCK_SIZE) {
         return WH_ERROR_BADARGS;
     }
 
     inData =
         (const uint8_t*)cryptoDataIn + sizeof(whMessageCrypto_Sha512Request);
 
-    /* init sha2 struct with devid. If the client requested a variant the
-     * server does not have compiled in, we normalize hashType to plain SHA512
+    /* If the client requested a variant the server does not have compiled
+     * in, we normalize hashType to plain SHA512
      * so the response reflects what was actually executed; the client detects
      * the mismatch against its own hashType and returns an error. */
     hashType = req.resumeState.hashType;
     switch (hashType) {
 #ifndef WOLFSSL_NOSHA512_224
         case WC_HASH_TYPE_SHA512_224:
-            ret = wc_InitSha512_224_ex(sha512, NULL, devId);
+            ret = wc_InitSha512_224_ex(sha512, NULL, hashDevId);
             break;
 #endif
 #ifndef WOLFSSL_NOSHA512_256
         case WC_HASH_TYPE_SHA512_256:
-            ret = wc_InitSha512_256_ex(sha512, NULL, devId);
+            ret = wc_InitSha512_256_ex(sha512, NULL, hashDevId);
             break;
 #endif
         default:
-            ret      = wc_InitSha512_ex(sha512, NULL, devId);
+            ret      = wc_InitSha512_ex(sha512, NULL, hashDevId);
             hashType = WC_HASH_TYPE_SHA512;
             break;
     }
@@ -4985,9 +5037,11 @@ static int _HandleSha512(whServerContext* ctx, uint16_t magic, int devId,
 
     /* Restore intermediate state from client; server is stateless otherwise.
      * The partial-block buffer lives only on the client. */
-    memcpy(sha512->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
-    sha512->loLen   = req.resumeState.loLen;
-    sha512->hiLen   = req.resumeState.hiLen;
+    if (!req.wholeMessage) {
+        memcpy(sha512->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
+        sha512->loLen   = req.resumeState.loLen;
+        sha512->hiLen   = req.resumeState.hiLen;
+    }
     sha512->buffLen = 0;
 
     if (req.inSz > 0) {
@@ -5099,6 +5153,7 @@ static int _HandleSha3(whServerContext* ctx, int hashType, uint16_t magic,
                        void* cryptoDataOut, uint16_t* outSize)
 {
     int                          ret = 0;
+    int                          hashDevId;
     wc_Sha3                      sha3[1];
     whMessageCrypto_Sha3Request  req;
     whMessageCrypto_Sha3Response res = {0};
@@ -5121,26 +5176,39 @@ static int _HandleSha3(whServerContext* ctx, int hashType, uint16_t magic,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha3Request))) {
         return WH_ERROR_BADARGS;
     }
-    if (!req.isLastBlock && (req.inSz % ops.blockSize) != 0) {
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
         return WH_ERROR_BADARGS;
     }
-    if (req.isLastBlock && req.inSz >= ops.blockSize) {
+    if (!req.wholeMessage && !req.isLastBlock &&
+        (req.inSz % ops.blockSize) != 0) {
+        return WH_ERROR_BADARGS;
+    }
+    if (!req.wholeMessage && req.isLastBlock &&
+        req.inSz >= ops.blockSize) {
         return WH_ERROR_BADARGS;
     }
 
     inData = (const uint8_t*)cryptoDataIn + sizeof(whMessageCrypto_Sha3Request);
 
-    ret = ops.initFn(sha3, NULL, devId);
+    ret = ops.initFn(sha3, NULL, hashDevId);
     if (ret != 0) {
         return ret;
     }
 
     /* Restore Keccak state from client. initFn already zeroed t[] and i. */
-    memcpy(sha3->s, req.resumeState.s, sizeof(sha3->s));
+    if (!req.wholeMessage) {
+        memcpy(sha3->s, req.resumeState.s, sizeof(sha3->s));
+    }
 
     if (req.inSz > 0) {
         ret = ops.updateFn(sha3, inData, req.inSz);
@@ -6351,6 +6419,7 @@ static int _HandleSha256Dma(whServerContext* ctx, uint16_t magic, int devId,
     (void)seq;
 
     int                              ret   = 0;
+    int                              hashDevId;
     int                              preOk = 0;
     whMessageCrypto_Sha256DmaRequest req;
     whMessageCrypto_Sha2DmaResponse  res = {0};
@@ -6370,18 +6439,28 @@ static int _HandleSha256Dma(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     /* Validate inSz fits inside the received payload */
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha256DmaRequest))) {
         return WH_ERROR_BADARGS;
     }
     /* Non-final: inline and DMA input must be multiples of block size */
-    if (!req.isLastBlock && ((req.inSz % WC_SHA256_BLOCK_SIZE) != 0 ||
-                             (req.input.sz % WC_SHA256_BLOCK_SIZE) != 0)) {
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
+        return WH_ERROR_BADARGS;
+    }
+    if (!req.wholeMessage && !req.isLastBlock &&
+        ((req.inSz % WC_SHA256_BLOCK_SIZE) != 0 ||
+         (req.input.sz % WC_SHA256_BLOCK_SIZE) != 0)) {
         return WH_ERROR_BADARGS;
     }
     /* Final: inline data must be less than one block, no DMA input */
-    if (req.isLastBlock &&
+    if (!req.wholeMessage && req.isLastBlock &&
         (req.inSz >= WC_SHA256_BLOCK_SIZE || req.input.sz != 0)) {
         return WH_ERROR_BADARGS;
     }
@@ -6389,15 +6468,17 @@ static int _HandleSha256Dma(whServerContext* ctx, uint16_t magic, int devId,
     inlineData =
         (const uint8_t*)cryptoDataIn + sizeof(whMessageCrypto_Sha256DmaRequest);
 
-    ret = wc_InitSha256_ex(sha256, NULL, devId);
+    ret = wc_InitSha256_ex(sha256, NULL, hashDevId);
     if (ret != 0) {
         return ret;
     }
 
     /* Restore intermediate state from request */
-    memcpy(sha256->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
-    sha256->loLen   = req.resumeState.loLen;
-    sha256->hiLen   = req.resumeState.hiLen;
+    if (!req.wholeMessage) {
+        memcpy(sha256->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
+        sha256->loLen   = req.resumeState.loLen;
+        sha256->hiLen   = req.resumeState.hiLen;
+    }
     sha256->buffLen = 0;
 
     /* Process inline trailing data (assembled first block or final tail) */
@@ -6458,6 +6539,7 @@ static int _HandleSha224Dma(whServerContext* ctx, uint16_t magic, int devId,
 {
     (void)seq;
     int                              ret   = 0;
+    int                              hashDevId;
     int                              preOk = 0;
     whMessageCrypto_Sha256DmaRequest req;
     whMessageCrypto_Sha2DmaResponse  res = {0};
@@ -6477,17 +6559,27 @@ static int _HandleSha224Dma(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha256DmaRequest))) {
         return WH_ERROR_BADARGS;
     }
     /* Non-final: inline and DMA input must be multiples of block size */
-    if (!req.isLastBlock && ((req.inSz % WC_SHA224_BLOCK_SIZE) != 0 ||
-                             (req.input.sz % WC_SHA224_BLOCK_SIZE) != 0)) {
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
+        return WH_ERROR_BADARGS;
+    }
+    if (!req.wholeMessage && !req.isLastBlock &&
+        ((req.inSz % WC_SHA224_BLOCK_SIZE) != 0 ||
+         (req.input.sz % WC_SHA224_BLOCK_SIZE) != 0)) {
         return WH_ERROR_BADARGS;
     }
     /* Final: inline data must be less than one block, no DMA input */
-    if (req.isLastBlock &&
+    if (!req.wholeMessage && req.isLastBlock &&
         (req.inSz >= WC_SHA224_BLOCK_SIZE || req.input.sz != 0)) {
         return WH_ERROR_BADARGS;
     }
@@ -6495,15 +6587,17 @@ static int _HandleSha224Dma(whServerContext* ctx, uint16_t magic, int devId,
     inlineData =
         (const uint8_t*)cryptoDataIn + sizeof(whMessageCrypto_Sha256DmaRequest);
 
-    ret = wc_InitSha224_ex(sha224, NULL, devId);
+    ret = wc_InitSha224_ex(sha224, NULL, hashDevId);
     if (ret != 0) {
         return ret;
     }
 
     /* SHA224 shares SHA256's internal 32-byte digest state */
-    memcpy(sha224->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
-    sha224->loLen   = req.resumeState.loLen;
-    sha224->hiLen   = req.resumeState.hiLen;
+    if (!req.wholeMessage) {
+        memcpy(sha224->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
+        sha224->loLen   = req.resumeState.loLen;
+        sha224->hiLen   = req.resumeState.hiLen;
+    }
     sha224->buffLen = 0;
 
     if (ret == 0 && req.inSz > 0) {
@@ -6562,6 +6656,7 @@ static int _HandleSha384Dma(whServerContext* ctx, uint16_t magic, int devId,
 {
     (void)seq;
     int                              ret   = 0;
+    int                              hashDevId;
     int                              preOk = 0;
     whMessageCrypto_Sha512DmaRequest req;
     whMessageCrypto_Sha2DmaResponse  res = {0};
@@ -6581,17 +6676,27 @@ static int _HandleSha384Dma(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha512DmaRequest))) {
         return WH_ERROR_BADARGS;
     }
     /* Non-final: inline and DMA input must be multiples of block size */
-    if (!req.isLastBlock && ((req.inSz % WC_SHA384_BLOCK_SIZE) != 0 ||
-                             (req.input.sz % WC_SHA384_BLOCK_SIZE) != 0)) {
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
+        return WH_ERROR_BADARGS;
+    }
+    if (!req.wholeMessage && !req.isLastBlock &&
+        ((req.inSz % WC_SHA384_BLOCK_SIZE) != 0 ||
+         (req.input.sz % WC_SHA384_BLOCK_SIZE) != 0)) {
         return WH_ERROR_BADARGS;
     }
     /* Final: inline data must be less than one block, no DMA input */
-    if (req.isLastBlock &&
+    if (!req.wholeMessage && req.isLastBlock &&
         (req.inSz >= WC_SHA384_BLOCK_SIZE || req.input.sz != 0)) {
         return WH_ERROR_BADARGS;
     }
@@ -6599,15 +6704,17 @@ static int _HandleSha384Dma(whServerContext* ctx, uint16_t magic, int devId,
     inlineData =
         (const uint8_t*)cryptoDataIn + sizeof(whMessageCrypto_Sha512DmaRequest);
 
-    ret = wc_InitSha384_ex(sha384, NULL, devId);
+    ret = wc_InitSha384_ex(sha384, NULL, hashDevId);
     if (ret != 0) {
         return ret;
     }
 
     /* SHA384 shares SHA512's internal 64-byte digest state */
-    memcpy(sha384->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
-    sha384->loLen   = req.resumeState.loLen;
-    sha384->hiLen   = req.resumeState.hiLen;
+    if (!req.wholeMessage) {
+        memcpy(sha384->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
+        sha384->loLen   = req.resumeState.loLen;
+        sha384->hiLen   = req.resumeState.hiLen;
+    }
     sha384->buffLen = 0;
 
     if (ret == 0 && req.inSz > 0) {
@@ -6666,6 +6773,7 @@ static int _HandleSha512Dma(whServerContext* ctx, uint16_t magic, int devId,
 {
     (void)seq;
     int                              ret   = 0;
+    int                              hashDevId;
     int                              preOk = 0;
     whMessageCrypto_Sha512DmaRequest req;
     whMessageCrypto_Sha2DmaResponse  res = {0};
@@ -6684,17 +6792,27 @@ static int _HandleSha512Dma(whServerContext* ctx, uint16_t magic, int devId,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha512DmaRequest))) {
         return WH_ERROR_BADARGS;
     }
     /* Non-final: inline and DMA input must be multiples of block size */
-    if (!req.isLastBlock && ((req.inSz % WC_SHA512_BLOCK_SIZE) != 0 ||
-                             (req.input.sz % WC_SHA512_BLOCK_SIZE) != 0)) {
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
+        return WH_ERROR_BADARGS;
+    }
+    if (!req.wholeMessage && !req.isLastBlock &&
+        ((req.inSz % WC_SHA512_BLOCK_SIZE) != 0 ||
+         (req.input.sz % WC_SHA512_BLOCK_SIZE) != 0)) {
         return WH_ERROR_BADARGS;
     }
     /* Final: inline data must be less than one block, no DMA input */
-    if (req.isLastBlock &&
+    if (!req.wholeMessage && req.isLastBlock &&
         (req.inSz >= WC_SHA512_BLOCK_SIZE || req.input.sz != 0)) {
         return WH_ERROR_BADARGS;
     }
@@ -6710,16 +6828,16 @@ static int _HandleSha512Dma(whServerContext* ctx, uint16_t magic, int devId,
     switch (hashType) {
 #ifndef WOLFSSL_NOSHA512_224
         case WC_HASH_TYPE_SHA512_224:
-            ret = wc_InitSha512_224_ex(sha512, NULL, devId);
+            ret = wc_InitSha512_224_ex(sha512, NULL, hashDevId);
             break;
 #endif
 #ifndef WOLFSSL_NOSHA512_256
         case WC_HASH_TYPE_SHA512_256:
-            ret = wc_InitSha512_256_ex(sha512, NULL, devId);
+            ret = wc_InitSha512_256_ex(sha512, NULL, hashDevId);
             break;
 #endif
         default:
-            ret      = wc_InitSha512_ex(sha512, NULL, devId);
+            ret      = wc_InitSha512_ex(sha512, NULL, hashDevId);
             hashType = WC_HASH_TYPE_SHA512;
             break;
     }
@@ -6729,9 +6847,11 @@ static int _HandleSha512Dma(whServerContext* ctx, uint16_t magic, int devId,
 
     res.hashType = hashType;
 
-    memcpy(sha512->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
-    sha512->loLen    = req.resumeState.loLen;
-    sha512->hiLen    = req.resumeState.hiLen;
+    if (!req.wholeMessage) {
+        memcpy(sha512->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
+        sha512->loLen    = req.resumeState.loLen;
+        sha512->hiLen    = req.resumeState.hiLen;
+    }
     sha512->buffLen  = 0;
 
     if (ret == 0 && req.inSz > 0) {
@@ -6804,6 +6924,7 @@ static int _HandleSha3Dma(whServerContext* ctx, int hashType, uint16_t magic,
 {
     (void)seq;
     int                             ret   = 0;
+    int                             hashDevId;
     int                             preOk = 0;
     whMessageCrypto_Sha3DmaRequest  req;
     whMessageCrypto_Sha3DmaResponse res = {0};
@@ -6827,28 +6948,41 @@ static int _HandleSha3Dma(whServerContext* ctx, int hashType, uint16_t magic,
         return ret;
     }
 
+    /* Resuming a client midstate has no expression in the crypto callback
+     * interface, so only a whole-message request may reach the device. */
+    hashDevId = req.wholeMessage ? devId : INVALID_DEVID;
+
     if ((uint32_t)req.inSz >
         (uint32_t)(inSize - sizeof(whMessageCrypto_Sha3DmaRequest))) {
         return WH_ERROR_BADARGS;
     }
-    if (!req.isLastBlock && ((req.inSz % ops.blockSize) != 0 ||
-                             (req.input.sz % ops.blockSize) != 0)) {
+    /* A whole-message request carries the entire message, so neither the
+     * whole-block rule nor the sub-block final rule applies to it. */
+    if (req.wholeMessage && !req.isLastBlock) {
         return WH_ERROR_BADARGS;
     }
-    if (req.isLastBlock && (req.inSz >= ops.blockSize || req.input.sz != 0)) {
+    if (!req.wholeMessage && !req.isLastBlock &&
+        ((req.inSz % ops.blockSize) != 0 ||
+         (req.input.sz % ops.blockSize) != 0)) {
+        return WH_ERROR_BADARGS;
+    }
+    if (!req.wholeMessage && req.isLastBlock &&
+        (req.inSz >= ops.blockSize || req.input.sz != 0)) {
         return WH_ERROR_BADARGS;
     }
 
     inlineData =
         (const uint8_t*)cryptoDataIn + sizeof(whMessageCrypto_Sha3DmaRequest);
 
-    ret = ops.initFn(sha3, NULL, devId);
+    ret = ops.initFn(sha3, NULL, hashDevId);
     if (ret != 0) {
         return ret;
     }
 
     /* Restore Keccak state from client. initFn already zeroed t[] and i. */
-    memcpy(sha3->s, req.resumeState.s, sizeof(sha3->s));
+    if (!req.wholeMessage) {
+        memcpy(sha3->s, req.resumeState.s, sizeof(sha3->s));
+    }
 
     if (ret == 0 && req.inSz > 0) {
         ret = ops.updateFn(sha3, inlineData, req.inSz);

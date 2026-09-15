@@ -685,6 +685,7 @@ int wh_MessageCrypto_TranslateSha256Request(
     }
     WH_T32(magic, dest, src, isLastBlock);
     WH_T32(magic, dest, src, inSz);
+    WH_T32(magic, dest, src, wholeMessage);
     return 0;
 }
 
@@ -709,6 +710,7 @@ int wh_MessageCrypto_TranslateSha512Request(
     }
     WH_T32(magic, dest, src, isLastBlock);
     WH_T32(magic, dest, src, inSz);
+    WH_T32(magic, dest, src, wholeMessage);
     return 0;
 }
 #endif /* WOLFSSL_SHA512 || WOLFSSL_SHA384 */
@@ -759,6 +761,7 @@ int wh_MessageCrypto_TranslateSha3Request(
     }
     WH_T32(magic, dest, src, isLastBlock);
     WH_T32(magic, dest, src, inSz);
+    WH_T32(magic, dest, src, wholeMessage);
     return wh_MessageCrypto_TranslateSha3State(magic, &src->resumeState,
                                                &dest->resumeState);
 }
@@ -1063,6 +1066,7 @@ int wh_MessageCrypto_TranslateSha256DmaRequest(
 
     WH_T32(magic, dest, src, isLastBlock);
     WH_T32(magic, dest, src, inSz);
+    WH_T32(magic, dest, src, wholeMessage);
 
     return 0;
 }
@@ -1093,6 +1097,7 @@ int wh_MessageCrypto_TranslateSha512DmaRequest(
 
     WH_T32(magic, dest, src, isLastBlock);
     WH_T32(magic, dest, src, inSz);
+    WH_T32(magic, dest, src, wholeMessage);
 
     return 0;
 }
@@ -1133,6 +1138,7 @@ int wh_MessageCrypto_TranslateSha3DmaRequest(
     }
     WH_T32(magic, dest, src, isLastBlock);
     WH_T32(magic, dest, src, inSz);
+    WH_T32(magic, dest, src, wholeMessage);
     return wh_MessageCrypto_TranslateSha3State(magic, &src->resumeState,
                                                &dest->resumeState);
 }

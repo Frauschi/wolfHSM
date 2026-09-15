@@ -7649,6 +7649,221 @@ static int whTest_CryptoSha3Keccak(whClientContext* ctx, int devId)
 }
 #endif /* WOLFSSL_HASH_FLAGS && !WOLFSSL_NOSHA3_256 */
 
+#if !defined(NO_SHA256) || \
+    (defined(WOLFSSL_SHA3) && !defined(WOLFSSL_NOSHA3_256))
+/* Send one hash request that is already laid out in the comm buffer and hand
+ * back the response payload that follows the generic response header. */
+static int whTest_ShaWholeMessageExchange(whClientContext* ctx, uint16_t group,
+                                          uint16_t algoType, uint32_t reqSz,
+                                          const uint8_t* in, uint32_t inLen,
+                                          uint8_t** outResp)
+{
+    whMessageCrypto_GenericRequestHeader*  hdr;
+    whMessageCrypto_GenericResponseHeader* rhdr;
+    uint8_t* dataPtr;
+    uint16_t respGroup  = 0;
+    uint16_t respAction = 0;
+    uint16_t respSz     = 0;
+    int      ret;
+
+    dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+    if (dataPtr == NULL) {
+        return WH_ERROR_BADARGS;
+    }
+
+    hdr              = (whMessageCrypto_GenericRequestHeader*)dataPtr;
+    hdr->algoType    = algoType;
+    hdr->algoSubType = WH_MESSAGE_CRYPTO_ALGO_SUBTYPE_NONE;
+    hdr->affinity    = ctx->cryptoAffinity;
+
+    memcpy(dataPtr + sizeof(*hdr) + reqSz, in, inLen);
+
+    ret = wh_Client_SendRequest(ctx, group, WC_ALGO_TYPE_HASH,
+                                (uint16_t)(sizeof(*hdr) + reqSz + inLen),
+                                dataPtr);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("whole-message send failed: %d\n", ret);
+        return ret;
+    }
+
+    do {
+        ret = wh_Client_RecvResponse(ctx, &respGroup, &respAction, &respSz,
+                                     WOLFHSM_CFG_COMM_DATA_LEN, dataPtr);
+    } while (ret == WH_ERROR_NOTREADY);
+    if (ret != WH_ERROR_OK) {
+        WH_ERROR_PRINT("whole-message recv failed: %d\n", ret);
+        return ret;
+    }
+
+    rhdr = (whMessageCrypto_GenericResponseHeader*)dataPtr;
+    if (rhdr->rc != 0) {
+        WH_ERROR_PRINT("whole-message request rejected: %d\n", (int)rhdr->rc);
+        return (int)rhdr->rc;
+    }
+
+    *outResp = dataPtr + sizeof(*rhdr);
+    return WH_ERROR_OK;
+}
+
+/* The client library only emits a whole-message request when the message is
+ * shorter than one block, so drive the longer case over the wire directly. */
+static int whTest_CryptoShaWholeMessage(whClientContext* ctx, int devId)
+{
+    int      ret = WH_ERROR_OK;
+    uint8_t* dataPtr;
+    uint8_t* resp = NULL;
+    uint32_t i;
+#ifndef NO_SHA256
+    uint8_t sha2In[(3 * WC_SHA256_BLOCK_SIZE) + 7];
+    uint8_t sha2Ref[WC_SHA256_DIGEST_SIZE];
+#endif
+#if defined(WOLFSSL_SHA3) && !defined(WOLFSSL_NOSHA3_256)
+    uint8_t sha3In[(3 * WC_SHA3_256_BLOCK_SIZE) + 7];
+    uint8_t sha3Ref[WC_SHA3_256_DIGEST_SIZE];
+    wc_Sha3 sw[1];
+#endif
+
+#ifndef NO_SHA256
+    for (i = 0; i < (uint32_t)sizeof(sha2In); i++) {
+        sha2In[i] = (uint8_t)(i * 7u);
+    }
+    ret = whTest_Sha256Reference(sha2In, (uint32_t)sizeof(sha2In), sha2Ref);
+    if (ret == 0) {
+        whMessageCrypto_Sha256Request* req;
+        dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+        if (dataPtr == NULL) {
+            return WH_ERROR_BADARGS;
+        }
+        req = (whMessageCrypto_Sha256Request*)(dataPtr +
+                  sizeof(whMessageCrypto_GenericRequestHeader));
+        memset(req, 0, sizeof(*req));
+        req->isLastBlock  = 1;
+        req->wholeMessage = 1;
+        req->inSz         = (uint32_t)sizeof(sha2In);
+        ret = whTest_ShaWholeMessageExchange(ctx, WH_MESSAGE_GROUP_CRYPTO,
+                                             WC_HASH_TYPE_SHA256, sizeof(*req),
+                                             sha2In, (uint32_t)sizeof(sha2In),
+                                             &resp);
+    }
+    if (ret == 0) {
+        whMessageCrypto_Sha2Response* res =
+            (whMessageCrypto_Sha2Response*)resp;
+        if (memcmp(res->hash, sha2Ref, sizeof(sha2Ref)) != 0) {
+            WH_ERROR_PRINT("SHA256 whole-message digest mismatch\n");
+            ret = -1;
+        }
+    }
+#endif /* !NO_SHA256 */
+
+#if defined(WOLFSSL_SHA3) && !defined(WOLFSSL_NOSHA3_256)
+    if (ret == 0) {
+        for (i = 0; i < (uint32_t)sizeof(sha3In); i++) {
+            sha3In[i] = (uint8_t)(i * 11u);
+        }
+        ret = wc_InitSha3_256(sw, NULL, INVALID_DEVID);
+        if (ret == 0) {
+            ret = wc_Sha3_256_Update(sw, sha3In, (word32)sizeof(sha3In));
+        }
+        if (ret == 0) {
+            ret = wc_Sha3_256_Final(sw, sha3Ref);
+        }
+        (void)wc_Sha3_256_Free(sw);
+    }
+    if (ret == 0) {
+        whMessageCrypto_Sha3Request* req;
+        dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+        if (dataPtr == NULL) {
+            return WH_ERROR_BADARGS;
+        }
+        req = (whMessageCrypto_Sha3Request*)(dataPtr +
+                  sizeof(whMessageCrypto_GenericRequestHeader));
+        memset(req, 0, sizeof(*req));
+        req->isLastBlock  = 1;
+        req->wholeMessage = 1;
+        req->inSz         = (uint32_t)sizeof(sha3In);
+        ret = whTest_ShaWholeMessageExchange(ctx, WH_MESSAGE_GROUP_CRYPTO,
+                                             WC_HASH_TYPE_SHA3_256,
+                                             sizeof(*req), sha3In,
+                                             (uint32_t)sizeof(sha3In), &resp);
+    }
+    if (ret == 0) {
+        whMessageCrypto_Sha3Response* res =
+            (whMessageCrypto_Sha3Response*)resp;
+        if (memcmp(res->hash, sha3Ref, sizeof(sha3Ref)) != 0) {
+            WH_ERROR_PRINT("SHA3-256 whole-message digest mismatch\n");
+            ret = -1;
+        }
+    }
+#endif /* WOLFSSL_SHA3 && !WOLFSSL_NOSHA3_256 */
+
+#ifdef WOLFHSM_CFG_DMA
+#ifndef NO_SHA256
+    if (ret == 0) {
+        whMessageCrypto_Sha256DmaRequest* req;
+        const uint32_t head = 5u;
+        dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+        if (dataPtr == NULL) {
+            return WH_ERROR_BADARGS;
+        }
+        req = (whMessageCrypto_Sha256DmaRequest*)(dataPtr +
+                  sizeof(whMessageCrypto_GenericRequestHeader));
+        memset(req, 0, sizeof(*req));
+        req->isLastBlock  = 1;
+        req->wholeMessage = 1;
+        req->inSz         = head;
+        req->input.addr   = (uint64_t)(uintptr_t)(sha2In + head);
+        req->input.sz     = (uint64_t)(sizeof(sha2In) - head);
+        ret = whTest_ShaWholeMessageExchange(ctx, WH_MESSAGE_GROUP_CRYPTO_DMA,
+                                             WC_HASH_TYPE_SHA256, sizeof(*req),
+                                             sha2In, head, &resp);
+    }
+    if (ret == 0) {
+        whMessageCrypto_Sha2DmaResponse* res =
+            (whMessageCrypto_Sha2DmaResponse*)resp;
+        if (memcmp(res->hash, sha2Ref, sizeof(sha2Ref)) != 0) {
+            WH_ERROR_PRINT("SHA256 DMA whole-message digest mismatch\n");
+            ret = -1;
+        }
+    }
+#endif /* !NO_SHA256 */
+#if defined(WOLFSSL_SHA3) && !defined(WOLFSSL_NOSHA3_256)
+    if (ret == 0) {
+        whMessageCrypto_Sha3DmaRequest* req;
+        const uint32_t head = 5u;
+        dataPtr = wh_CommClient_GetDataPtr(ctx->comm);
+        if (dataPtr == NULL) {
+            return WH_ERROR_BADARGS;
+        }
+        req = (whMessageCrypto_Sha3DmaRequest*)(dataPtr +
+                  sizeof(whMessageCrypto_GenericRequestHeader));
+        memset(req, 0, sizeof(*req));
+        req->isLastBlock  = 1;
+        req->wholeMessage = 1;
+        req->inSz         = head;
+        req->input.addr   = (uint64_t)(uintptr_t)(sha3In + head);
+        req->input.sz     = (uint64_t)(sizeof(sha3In) - head);
+        ret = whTest_ShaWholeMessageExchange(ctx, WH_MESSAGE_GROUP_CRYPTO_DMA,
+                                             WC_HASH_TYPE_SHA3_256,
+                                             sizeof(*req), sha3In, head, &resp);
+    }
+    if (ret == 0) {
+        whMessageCrypto_Sha3DmaResponse* res =
+            (whMessageCrypto_Sha3DmaResponse*)resp;
+        if (memcmp(res->hash, sha3Ref, sizeof(sha3Ref)) != 0) {
+            WH_ERROR_PRINT("SHA3-256 DMA whole-message digest mismatch\n");
+            ret = -1;
+        }
+    }
+#endif /* WOLFSSL_SHA3 && !WOLFSSL_NOSHA3_256 */
+#endif /* WOLFHSM_CFG_DMA */
+
+    if (ret == 0) {
+        WH_TEST_PRINT("SHA WHOLE-MESSAGE DEVID=0x%X SUCCESS\n", devId);
+    }
+    return ret;
+}
+#endif /* !NO_SHA256 || (WOLFSSL_SHA3 && !WOLFSSL_NOSHA3_256) */
+
 static int whTest_CryptoSha3(whClientContext* ctx, int devId, WC_RNG* rng)
 {
     int    ret = WH_ERROR_OK;
@@ -18186,6 +18401,13 @@ int whTest_CryptoClientConfig(whClientConfig* config)
     }
 #endif /* WOLFHSM_CFG_DMA */
 #endif /* WOLFSSL_SHA3 */
+
+#if !defined(NO_SHA256) || \
+    (defined(WOLFSSL_SHA3) && !defined(WOLFSSL_NOSHA3_256))
+    if (ret == WH_ERROR_OK) {
+        ret = whTest_CryptoShaWholeMessage(client, WH_CLIENT_DEVID(client));
+    }
+#endif
 
 #ifdef HAVE_HKDF
     (void)wh_Client_SetDmaMode(client, 0);
