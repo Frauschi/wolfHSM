@@ -51,7 +51,7 @@ int whLogRingbuf_Init(void* context, const void* config)
     }
 
     /* Initialize context */
-    memset(ctx, 0, sizeof(*ctx));
+    WH_MEMSET(ctx, 0, sizeof(*ctx));
     ctx->entries     = (whLogEntry*)cfg->buffer;
     ctx->capacity    = capacity;
     ctx->count       = 0;
@@ -93,7 +93,7 @@ int whLogRingbuf_AddEntry(void* context, const whLogEntry* entry)
     head = ctx->count % ctx->capacity;
 
     /* Copy entry to ring buffer at head position */
-    memcpy(&ctx->entries[head], entry, sizeof(whLogEntry));
+    WH_MEMCPY(&ctx->entries[head], entry, sizeof(whLogEntry));
 
     /* Increment count freely to track total messages written */
     ctx->count++;
@@ -173,7 +173,7 @@ int whLogRingbuf_Clear(void* context)
     ctx->count = 0;
 
     /* Zero the log entries */
-    memset(ctx->entries, 0, ctx->capacity * sizeof(whLogEntry));
+    WH_MEMSET(ctx->entries, 0, ctx->capacity * sizeof(whLogEntry));
 
     return WH_ERROR_OK;
 }

@@ -107,15 +107,15 @@ int wh_Nvm_Init(whNvmContext* context, const whNvmConfig* config)
 
 #if !defined(WOLFHSM_CFG_NO_CRYPTO) && defined(WOLFHSM_CFG_GLOBAL_KEYS)
     /* Initialize the global key cache */
-    memset(&context->globalCache, 0, sizeof(context->globalCache));
+    WH_MEMSET(&context->globalCache, 0, sizeof(context->globalCache));
 #endif
 
 #ifdef WOLFHSM_CFG_CERTIFICATE_VERIFY_CACHE_GLOBAL
     /* Initialize the global cert verify cache. Default to enabled so a fresh
      * NVM context preserves pre-runtime-toggle behavior; clients can disable
      * via wh_Client_CertVerifyCacheSetEnabled. */
-    memset(&context->globalCertVerifyCache, 0,
-           sizeof(context->globalCertVerifyCache));
+    WH_MEMSET(&context->globalCertVerifyCache, 0,
+              sizeof(context->globalCertVerifyCache));
     context->globalCertVerifyCache.enabled = 1;
 #endif
 
@@ -166,14 +166,14 @@ int wh_Nvm_Cleanup(whNvmContext* context)
 
 #if !defined(WOLFHSM_CFG_NO_CRYPTO) && defined(WOLFHSM_CFG_GLOBAL_KEYS)
     /* Clear the global key cache */
-    memset(&context->globalCache, 0, sizeof(context->globalCache));
+    WH_MEMSET(&context->globalCache, 0, sizeof(context->globalCache));
 #endif
 
 #ifdef WOLFHSM_CFG_CERTIFICATE_VERIFY_CACHE_GLOBAL
     /* Clear cache slots/writeIdx but keep the embedded lock intact until its
      * own cleanup below. */
-    memset(context->globalCertVerifyCache.slots, 0,
-           sizeof(context->globalCertVerifyCache.slots));
+    WH_MEMSET(context->globalCertVerifyCache.slots, 0,
+              sizeof(context->globalCertVerifyCache.slots));
     context->globalCertVerifyCache.writeIdx = 0;
 #endif
 

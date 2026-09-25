@@ -61,7 +61,8 @@ static void _translateCustomData(uint16_t magic, uint32_t translatedType,
     }
     else {
         /* use memmove in case data is translated "in place" */
-        memmove(dst->buffer.data, src->buffer.data, sizeof(dst->buffer.data));
+        WH_MEMMOVE(dst->buffer.data, src->buffer.data,
+                   sizeof(dst->buffer.data));
     }
 }
 

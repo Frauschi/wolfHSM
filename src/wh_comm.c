@@ -70,7 +70,7 @@ int wh_CommClient_Init(whCommClient* context, const whCommClientConfig* config)
         return WH_ERROR_BADARGS;
     }
 
-    memset(context, 0, sizeof(*context));
+    WH_MEMSET(context, 0, sizeof(*context));
     context->transport_cb       = config->transport_cb;
     context->transport_context  = config->transport_context;
     context->client_id          = config->client_id;
@@ -132,7 +132,7 @@ int wh_CommClient_SendRequest(whCommClient* context, uint16_t magic,
     if (    (data != NULL) &&
             (data_size != 0) &&
             (data != context->data)) {
-        memcpy(context->data, data, data_size);
+        WH_MEMCPY(context->data, data, data_size);
     }
     rc = context->transport_cb->Send(context->transport_context,
             sizeof(*(context->hdr)) + data_size,
@@ -234,7 +234,7 @@ int wh_CommClient_RecvResponse(whCommClient* context, uint16_t* out_magic,
                     rc = WH_ERROR_BUFFER_SIZE;
                 }
                 else {
-                    memcpy(data, context->data, payload_size);
+                    WH_MEMCPY(data, context->data, payload_size);
                 }
             }
             if (out_magic != NULL) *out_magic = magic;
@@ -342,7 +342,7 @@ int wh_CommServer_Init(whCommServer* context, const whCommServerConfig* config,
         return WH_ERROR_BADARGS;
     }
 
-    memset(context, 0, sizeof(*context));
+    WH_MEMSET(context, 0, sizeof(*context));
     context->transport_context  = config->transport_context;
     context->transport_cb       = config->transport_cb;
     context->server_id          = config->server_id;
@@ -401,7 +401,7 @@ int wh_CommServer_RecvRequest(whCommServer* context,
                 if (    (data != NULL) &&
                         (req_size != 0) &&
                         (data != context->data) ) {
-                    memcpy(data, context->data, req_size);
+                    WH_MEMCPY(data, context->data, req_size);
                 }
             }
             if (out_magic != NULL) *out_magic = magic;
@@ -438,7 +438,7 @@ int wh_CommServer_SendResponse(whCommServer* context,
     if (    (data != NULL) &&
             (data_size != 0) &&
             (data != context->data) ) {
-        memcpy(context->data, data, data_size);
+        WH_MEMCPY(context->data, data, data_size);
     }
     rc = context->transport_cb->Send(context->transport_context,
             sizeof(*(context->hdr)) + data_size,

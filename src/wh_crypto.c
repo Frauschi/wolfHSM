@@ -87,7 +87,7 @@ int wh_Crypto_RsaSerializeKeyDer(const RsaKey* key, uint16_t max_size,
     } else {
         /* Error serializing.  Clear the buffer */
         ret = der_size;
-        memset(buffer, 0, max_size);
+        WH_MEMSET(buffer, 0, max_size);
     }
     return ret;
 }
@@ -521,7 +521,7 @@ int wh_Crypto_IsStatefulSigPrivBlob(const uint8_t* buffer, uint16_t size)
     if ((buffer == NULL) || (size < sizeof(hdr))) {
         return 0;
     }
-    memcpy(&hdr, buffer, sizeof(hdr));
+    WH_MEMCPY(&hdr, buffer, sizeof(hdr));
     /* Match what deserialize requires before it would accept the blob. */
     if ((hdr.magic != WH_CRYPTO_STATEFUL_SIG_BLOB_MAGIC_LMS) &&
         (hdr.magic != WH_CRYPTO_STATEFUL_SIG_BLOB_MAGIC_XMSS)) {
@@ -545,7 +545,7 @@ static int _StatefulSigEncodeHeader(uint8_t* buffer, uint32_t magic,
     hdr.reserved = 0;
     /* Copy via a local struct so the on-blob bytes are not assumed to be
      * struct-aligned. */
-    memcpy(buffer, &hdr, sizeof(hdr));
+    WH_MEMCPY(buffer, &hdr, sizeof(hdr));
     return WH_ERROR_OK;
 }
 
@@ -558,7 +558,7 @@ static int _StatefulSigDecodeHeader(const uint8_t* buffer, uint16_t size,
     if (size < sizeof(hdr)) {
         return WH_ERROR_BADARGS;
     }
-    memcpy(&hdr, buffer, sizeof(hdr));
+    WH_MEMCPY(&hdr, buffer, sizeof(hdr));
     /* Magic and the zeroed reserved field together validate the header. */
     if ((hdr.magic != expectMagic) || (hdr.reserved != 0)) {
         return WH_ERROR_BADARGS;
@@ -617,10 +617,10 @@ int wh_Crypto_LmsSerializeKey(LmsKey* key, uint16_t max_size, uint8_t* buffer,
     buffer[WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + 1] = key->params->height;
     buffer[WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + 2] = key->params->width;
 
-    memcpy(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen,
-           key->pub, pubLen);
-    memcpy(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen + pubLen,
-           key->priv_raw, privLen);
+    WH_MEMCPY(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen,
+              key->pub, pubLen);
+    WH_MEMCPY(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen + pubLen,
+              key->priv_raw, privLen);
 
     *out_size = (uint16_t)totalLen;
     return WH_ERROR_OK;
@@ -683,13 +683,13 @@ int wh_Crypto_LmsDeserializeKey(const uint8_t* buffer, uint16_t size,
 #endif
 
     p = buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen;
-    memcpy(key->pub, p, pubLen);
+    WH_MEMCPY(key->pub, p, pubLen);
 #ifndef WOLFSSL_LMS_VERIFY_ONLY
     if (privLen > 0) {
         p += pubLen;
         /* SigsLeft path does not reload, so copy priv_raw into the key.
          * For the Sign path in software, this is a duplicate read. */
-        memcpy(key->priv_raw, p, privLen);
+        WH_MEMCPY(key->priv_raw, p, privLen);
     }
 #endif
 
@@ -733,8 +733,8 @@ int wh_Crypto_LmsSerializePubKey(LmsKey* key, uint16_t max_size,
     buffer[WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + 1] = key->params->height;
     buffer[WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + 2] = key->params->width;
 
-    memcpy(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen,
-           key->pub, pubLen);
+    WH_MEMCPY(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen,
+              key->pub, pubLen);
 
     *out_size = (uint16_t)totalLen;
     return WH_ERROR_OK;
@@ -791,12 +791,12 @@ static int _XmssSerializeSlot(XmssKey* key, const char* paramStr,
                                    WH_CRYPTO_STATEFUL_SIG_BLOB_MAGIC_XMSS,
                                    pubLen, privLen, paramLen);
 
-    memcpy(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ, paramStr, paramLen);
-    memcpy(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen,
-           key->pk, pubLen);
+    WH_MEMCPY(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ, paramStr, paramLen);
+    WH_MEMCPY(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen,
+              key->pk, pubLen);
     if (priv != NULL) {
-        memcpy(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen + pubLen,
-               priv, privLen);
+        WH_MEMCPY(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen + pubLen,
+                  priv, privLen);
     }
 
     *out_size = (uint16_t)totalLen;
@@ -895,7 +895,7 @@ int wh_Crypto_XmssDeserializeKey(const uint8_t* buffer, uint16_t size,
 #endif
 
     p = buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen;
-    memcpy(key->pk, p, pubLen);
+    WH_MEMCPY(key->pk, p, pubLen);
     /* The private key (if any) is left in the slot blob; downstream paths
      * read it via the slot ReadCb against the cached slot (sk is allocated
      * by Reload, not by deserialize). */
@@ -945,9 +945,9 @@ int wh_Crypto_XmssSerializePubKey(XmssKey* key, const char* paramStr,
                                    WH_CRYPTO_STATEFUL_SIG_BLOB_MAGIC_XMSS,
                                    pubLen, 0, paramLen);
 
-    memcpy(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ, paramStr, paramLen);
-    memcpy(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen,
-           key->pk, pubLen);
+    WH_MEMCPY(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ, paramStr, paramLen);
+    WH_MEMCPY(buffer + WH_CRYPTO_STATEFUL_SIG_HEADER_SZ + paramLen,
+              key->pk, pubLen);
 
     *out_size = (uint16_t)totalLen;
     return WH_ERROR_OK;
@@ -959,8 +959,8 @@ int wh_Crypto_XmssSerializePubKey(XmssKey* key, const char* paramStr,
 void wh_Crypto_CmacAesSaveStateToMsg(whMessageCrypto_CmacAesState* state,
                                      const Cmac*                   cmac)
 {
-    memcpy(state->buffer, cmac->buffer, AES_BLOCK_SIZE);
-    memcpy(state->digest, cmac->digest, AES_BLOCK_SIZE);
+    WH_MEMCPY(state->buffer, cmac->buffer, AES_BLOCK_SIZE);
+    WH_MEMCPY(state->digest, cmac->digest, AES_BLOCK_SIZE);
     state->bufferSz = cmac->bufferSz;
     state->totalSz  = cmac->totalSz;
 }
@@ -971,8 +971,8 @@ int wh_Crypto_CmacAesRestoreStateFromMsg(
     if (state->bufferSz > AES_BLOCK_SIZE) {
         return WH_ERROR_BADARGS;
     }
-    memcpy(cmac->buffer, state->buffer, AES_BLOCK_SIZE);
-    memcpy(cmac->digest, state->digest, AES_BLOCK_SIZE);
+    WH_MEMCPY(cmac->buffer, state->buffer, AES_BLOCK_SIZE);
+    WH_MEMCPY(cmac->digest, state->digest, AES_BLOCK_SIZE);
     cmac->bufferSz = state->bufferSz;
     cmac->totalSz  = state->totalSz;
     return 0;

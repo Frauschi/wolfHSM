@@ -166,8 +166,8 @@ static int _benchMlKemEncaps(whClientContext* client, whBenchOpContext* ctx,
         int    benchStartRet;
         int    benchStopRet;
 
-        memset(ct, 0, sizeof(ct));
-        memset(ss, 0, sizeof(ss));
+        WH_MEMSET(ct, 0, sizeof(ct));
+        WH_MEMSET(ss, 0, sizeof(ss));
 
         benchStartRet = wh_Bench_StartOp(ctx, id);
 #ifdef WOLFHSM_CFG_DMA
@@ -249,7 +249,7 @@ static int _benchMlKemDecaps(whClientContext* client, whBenchOpContext* ctx,
         int    benchStartRet;
         int    benchStopRet;
 
-        memset(ssDec, 0, sizeof(ssDec));
+        WH_MEMSET(ssDec, 0, sizeof(ssDec));
 
         benchStartRet = wh_Bench_StartOp(ctx, id);
 #ifdef WOLFHSM_CFG_DMA
@@ -273,7 +273,7 @@ static int _benchMlKemDecaps(whClientContext* client, whBenchOpContext* ctx,
             WH_BENCH_PRINTF("Failed ML-KEM decapsulate %d\n", ret);
         }
         else if ((ssDecLen != ssEncLen) ||
-                 (memcmp(ssDec, ssEnc, ssEncLen) != 0)) {
+                 (WH_MEMCMP(ssDec, ssEnc, ssEncLen) != 0)) {
             WH_BENCH_PRINTF("ML-KEM decapsulate mismatch\n");
             ret = WH_ERROR_ABORTED;
         }

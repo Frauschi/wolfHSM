@@ -79,7 +79,7 @@ int wh_Lock_Cleanup(whLock* lock)
     }
 
     /* Zero the entire structure to make post-cleanup state distinguishable */
-    memset(lock, 0, sizeof(*lock));
+    WH_MEMSET(lock, 0, sizeof(*lock));
 
     return WH_ERROR_OK;
 }

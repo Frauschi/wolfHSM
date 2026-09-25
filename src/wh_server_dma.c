@@ -156,7 +156,7 @@ int whServerDma_CopyFromClient(struct whServerContext_t* server,
     {
 
         /* TODO: should we add a flag to force client word-sized reads? */
-        memcpy(serverPtr, transformedAddr, len);
+        WH_MEMCPY(serverPtr, transformedAddr, len);
     }
 
     /* process the client address post-read */
@@ -202,7 +202,7 @@ int whServerDma_CopyToClient(struct whServerContext_t* server,
     {
 
         /* TODO: should we add a flag to force client word-sized reads? */
-        memcpy(transformedAddr, serverPtr, len);
+        WH_MEMCPY(transformedAddr, serverPtr, len);
     }
 
     /* Process the client address post-write */

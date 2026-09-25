@@ -68,8 +68,8 @@ int wh_MessageAuth_TranslateLoginRequest(
 
     WH_T16(magic, dest_header, src_header, method);
     if (src_header != dest_header) {
-        memcpy(dest_header->username, src_header->username,
-               sizeof(dest_header->username));
+        WH_MEMCPY(dest_header->username, src_header->username,
+                  sizeof(dest_header->username));
         /* make sure the destination username is null terminated */
         dest_header->username[sizeof(dest_header->username) - 1] = '\0';
     }
@@ -238,12 +238,12 @@ int wh_MessageAuth_TranslateUserAddRequest(
     src_header = (const whMessageAuth_UserAddRequest*)src_packet;
 
     if (src_header != dest_header) {
-        memcpy(dest_header->username, src_header->username,
-               sizeof(dest_header->username));
+        WH_MEMCPY(dest_header->username, src_header->username,
+                  sizeof(dest_header->username));
         /* make sure the destination username is null terminated */
         dest_header->username[sizeof(dest_header->username) - 1] = '\0';
-        memcpy(dest_header->permissions, src_header->permissions,
-               sizeof(dest_header->permissions));
+        WH_MEMCPY(dest_header->permissions, src_header->permissions,
+                  sizeof(dest_header->permissions));
     }
 
     WH_T16(magic, dest_header, src_header, method);
@@ -292,7 +292,7 @@ int wh_MessageAuth_TranslateUserGetRequest(
     }
 
     if (src != dest) {
-        memcpy(dest->username, src->username, sizeof(dest->username));
+        WH_MEMCPY(dest->username, src->username, sizeof(dest->username));
         /* make sure the destination username is null terminated */
         dest->username[sizeof(dest->username) - 1] = '\0';
     }
@@ -310,7 +310,8 @@ int wh_MessageAuth_TranslateUserGetResponse(
     WH_T32(magic, dest, src, rc);
     WH_T16(magic, dest, src, user_id);
     if (src != dest) {
-        memcpy(dest->permissions, src->permissions, sizeof(dest->permissions));
+        WH_MEMCPY(dest->permissions, src->permissions,
+                  sizeof(dest->permissions));
     }
     return 0;
 }
@@ -324,7 +325,8 @@ int wh_MessageAuth_TranslateUserSetPermissionsRequest(
     }
     WH_T16(magic, dest, src, user_id);
     if (src != dest) {
-        memcpy(dest->permissions, src->permissions, sizeof(dest->permissions));
+        WH_MEMCPY(dest->permissions, src->permissions,
+                  sizeof(dest->permissions));
     }
     return 0;
 }

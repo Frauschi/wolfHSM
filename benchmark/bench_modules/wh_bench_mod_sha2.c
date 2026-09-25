@@ -81,7 +81,7 @@ int _benchSha256(whClientContext* client, whBenchOpContext* ctx, int id,
         in    = WH_BENCH_DATA_IN_BUFFER;
         inLen = WOLFHSM_CFG_BENCH_DATA_BUFFER_SIZE;
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
-        memset(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
+        WH_MEMSET(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
 #endif
     }
 
@@ -205,7 +205,7 @@ int _benchSha224(whClientContext* client, whBenchOpContext* ctx, int id,
         in    = WH_BENCH_DATA_IN_BUFFER;
         inLen = WOLFHSM_CFG_BENCH_DATA_BUFFER_SIZE;
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
-        memset(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
+        WH_MEMSET(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
 #endif
     }
 
@@ -318,7 +318,7 @@ int _benchSha384(whClientContext* client, whBenchOpContext* ctx, int id,
         in    = WH_BENCH_DATA_IN_BUFFER;
         inLen = WOLFHSM_CFG_BENCH_DATA_BUFFER_SIZE;
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
-        memset(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
+        WH_MEMSET(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
 #endif
     }
 
@@ -430,7 +430,7 @@ int _benchSha512(whClientContext* client, whBenchOpContext* ctx, int id,
         in    = WH_BENCH_DATA_IN_BUFFER;
         inLen = WOLFHSM_CFG_BENCH_DATA_BUFFER_SIZE;
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
-        memset(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
+        WH_MEMSET(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
 #endif
     }
 

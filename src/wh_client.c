@@ -94,7 +94,7 @@ int wh_Client_Init(whClientContext* c, const whClientConfig* config)
 #endif /* WOLFHSM_CFG_DMA */
 #endif /* !WOLFHSM_CFG_NO_CRYPTO */
 
-    memset(c, 0, sizeof(*c));
+    WH_MEMSET(c, 0, sizeof(*c));
 
 #ifndef WOLFHSM_CFG_NO_CRYPTO
     /* Store the devId for this context. A nonzero devId also means "init
@@ -229,7 +229,7 @@ int wh_Client_Cleanup(whClientContext* c)
 
     (void)wh_CommClient_Cleanup(c->comm);
 
-    memset(c, 0, sizeof(*c));
+    WH_MEMSET(c, 0, sizeof(*c));
     return 0;
 }
 
@@ -414,10 +414,10 @@ int wh_Client_CommInfoResponse(whClientContext* c,
         } else {
             /* Valid message */
             if (out_version != NULL) {
-                memcpy(out_version, msg.version, sizeof(msg.version));
+                WH_MEMCPY(out_version, msg.version, sizeof(msg.version));
             }
             if (out_build != NULL) {
-                memcpy(out_build, msg.build, sizeof(msg.build));
+                WH_MEMCPY(out_build, msg.build, sizeof(msg.build));
             }
             if (out_cfg_comm_data_len != NULL) {
                 *out_cfg_comm_data_len = msg.cfg_comm_data_len;
@@ -629,7 +629,7 @@ int wh_Client_EchoRequest(whClientContext* c, uint16_t size, const void* data)
     if (msg == NULL) {
         return WH_ERROR_BADARGS;
     }
-    memcpy(msg, data, size);
+    WH_MEMCPY(msg, data, size);
     return wh_Client_SendRequest(c,
             WH_MESSAGE_GROUP_COMM, WH_MESSAGE_COMM_ACTION_ECHO,
             size, msg);
@@ -665,7 +665,7 @@ int wh_Client_EchoResponse(whClientContext* c, uint16_t *out_size, void* data)
                 *out_size = resp_size;
             }
             if (data != NULL) {
-                memcpy(data, msg, resp_size);
+                WH_MEMCPY(data, msg, resp_size);
             }
         }
     }
@@ -725,7 +725,7 @@ int wh_Client_CustomCbResponse(whClientContext*          c,
         return WH_ERROR_ABORTED;
     }
 
-    memcpy(outResp, &resp, sizeof(resp));
+    WH_MEMCPY(outResp, &resp, sizeof(resp));
 
     return WH_ERROR_OK;
 }
@@ -816,7 +816,7 @@ int wh_Client_KeyCacheRequest_ex(whClientContext* c, uint32_t flags,
     if (req == NULL) {
         return WH_ERROR_BADARGS;
     }
-    memset(req, 0, sizeof(*req));
+    WH_MEMSET(req, 0, sizeof(*req));
     packIn = (uint8_t*)(req + 1);
     req->id    = keyId;
     req->flags = flags;
@@ -829,11 +829,11 @@ int wh_Client_KeyCacheRequest_ex(whClientContext* c, uint32_t flags,
         /* write label */
         capSz = (labelSz > WH_NVM_LABEL_LEN) ? WH_NVM_LABEL_LEN : labelSz;
         req->labelSz = capSz;
-        memcpy(req->label, label, capSz);
+        WH_MEMCPY(req->label, label, capSz);
     }
 
     /* write in */
-    memcpy(packIn, in, inSz);
+    WH_MEMCPY(packIn, in, inSz);
 
     /* write request */
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_KEY, WH_KEY_CACHE,
@@ -920,7 +920,7 @@ int wh_Client_KeyCacheRandomRequest(whClientContext* c, uint32_t flags,
     if (req == NULL) {
         return WH_ERROR_BADARGS;
     }
-    memset(req, 0, sizeof(*req));
+    WH_MEMSET(req, 0, sizeof(*req));
     req->id    = keyId;
     req->flags = flags;
     req->sz    = keySz;
@@ -932,7 +932,7 @@ int wh_Client_KeyCacheRandomRequest(whClientContext* c, uint32_t flags,
         /* write label */
         capSz = (labelSz > WH_NVM_LABEL_LEN) ? WH_NVM_LABEL_LEN : labelSz;
         req->labelSz = capSz;
-        memcpy(req->label, label, capSz);
+        WH_MEMCPY(req->label, label, capSz);
     }
 
     /* write request (no key material is sent) */
@@ -1123,15 +1123,15 @@ int wh_Client_KeyExportResponse(whClientContext* c, uint8_t* label,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(out, packOut, resp->len);
+                WH_MEMCPY(out, packOut, resp->len);
                 *outSz = resp->len;
             }
             if (label != NULL) {
                 if (labelSz > sizeof(resp->label)) {
-                    memcpy(label, resp->label, WH_NVM_LABEL_LEN);
+                    WH_MEMCPY(label, resp->label, WH_NVM_LABEL_LEN);
                 }
                 else
-                    memcpy(label, resp->label, labelSz);
+                    WH_MEMCPY(label, resp->label, labelSz);
             }
         }
     }
@@ -1217,14 +1217,14 @@ int wh_Client_KeyExportPublicResponse(whClientContext* c, uint8_t* label,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(out, packOut, resp->len);
+                WH_MEMCPY(out, packOut, resp->len);
                 *outSz = resp->len;
             }
             if ((ret == WH_ERROR_OK) && (label != NULL)) {
                 if (labelSz > WH_NVM_LABEL_LEN) {
                     labelSz = WH_NVM_LABEL_LEN;
                 }
-                memcpy(label, resp->label, labelSz);
+                WH_MEMCPY(label, resp->label, labelSz);
             }
         }
     }
@@ -1736,7 +1736,7 @@ int wh_Client_KeyCacheDmaRequest(whClientContext* c, uint32_t flags,
     if (req == NULL) {
         return WH_ERROR_BADARGS;
     }
-    memset(req, 0, sizeof(*req));
+    WH_MEMSET(req, 0, sizeof(*req));
 
     /* PRE-translate the input key buffer and stash it for the Response POST.
      * POST runs in the Response, not here: the server reads the buffer between
@@ -1753,7 +1753,7 @@ int wh_Client_KeyCacheDmaRequest(whClientContext* c, uint32_t flags,
         if (labelSz > 0 && label != NULL) {
             capSz = (labelSz > WH_NVM_LABEL_LEN) ? WH_NVM_LABEL_LEN : labelSz;
             req->labelSz = capSz;
-            memcpy(req->label, label, capSz);
+            WH_MEMCPY(req->label, label, capSz);
         }
 
         ret = wh_Client_SendRequest(c, WH_MESSAGE_GROUP_KEY, WH_KEY_CACHE_DMA,
@@ -1923,7 +1923,7 @@ int wh_Client_KeyExportDmaResponse(whClientContext* c, uint8_t* label,
                     if (labelSz > WH_NVM_LABEL_LEN) {
                         labelSz = WH_NVM_LABEL_LEN;
                     }
-                    memcpy(label, resp->label, labelSz);
+                    WH_MEMCPY(label, resp->label, labelSz);
                 }
             }
         }
@@ -2043,7 +2043,7 @@ int wh_Client_KeyExportPublicDmaResponse(whClientContext* c, uint8_t* label,
                     if (labelSz > WH_NVM_LABEL_LEN) {
                         labelSz = WH_NVM_LABEL_LEN;
                     }
-                    memcpy(label, resp->label, labelSz);
+                    WH_MEMCPY(label, resp->label, labelSz);
                 }
             }
         }

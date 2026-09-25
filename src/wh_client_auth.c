@@ -101,7 +101,7 @@ int wh_Client_AuthLoginRequest(whClientContext* c, whAuthMethod method,
     msg->method                              = method;
     msg->auth_data_len                       = auth_data_len;
     if (auth_data_len > 0) {
-        memcpy(msg_auth_data, auth_data, auth_data_len);
+        WH_MEMCPY(msg_auth_data, auth_data, auth_data_len);
     }
 
     rc = wh_Client_SendRequest(c, WH_MESSAGE_GROUP_AUTH,
@@ -307,7 +307,7 @@ int wh_Client_AuthUserAddRequest(whClientContext* c, const char* username,
         msg->method          = method;
         msg->credentials_len = credentials_len;
         if (credentials_len > 0) {
-            memcpy(msg_credentials, credentials, credentials_len);
+            WH_MEMCPY(msg_credentials, credentials, credentials_len);
         }
 
         rc = wh_Client_SendRequest(c, WH_MESSAGE_GROUP_AUTH,
@@ -670,10 +670,11 @@ int wh_Client_AuthUserSetCredentialsRequest(
 
     /* Copy variable-length credential data */
     if (current_credentials_len > 0) {
-        memcpy(msg_current_creds, current_credentials, current_credentials_len);
+        WH_MEMCPY(msg_current_creds, current_credentials,
+                  current_credentials_len);
     }
     if (new_credentials_len > 0) {
-        memcpy(msg_new_creds, new_credentials, new_credentials_len);
+        WH_MEMCPY(msg_new_creds, new_credentials, new_credentials_len);
     }
 
     rc = wh_Client_SendRequest(c, WH_MESSAGE_GROUP_AUTH,

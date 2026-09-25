@@ -204,7 +204,7 @@ int wh_MessageCrypto_TranslateRsaKeyGenRequest(
     WH_T32(magic, dest, src, e);
     /* Label is just a byte array, no translation needed */
     if (src != dest) {
-        memcpy(dest->label, src->label, WH_NVM_LABEL_LEN);
+        WH_MEMCPY(dest->label, src->label, WH_NVM_LABEL_LEN);
     }
     return 0;
 }
@@ -293,7 +293,7 @@ int wh_MessageCrypto_TranslateHkdfRequest(
     WH_T32(magic, dest, src, outSz);
     /* Label is just a byte array, no translation needed */
     if (src != dest) {
-        memcpy(dest->label, src->label, WH_NVM_LABEL_LEN);
+        WH_MEMCPY(dest->label, src->label, WH_NVM_LABEL_LEN);
     }
     return 0;
 }
@@ -327,7 +327,7 @@ int wh_MessageCrypto_TranslateCmacKdfRequest(
     WH_T32(magic, dest, src, fixedInfoSz);
     WH_T32(magic, dest, src, outSz);
     if (src != dest) {
-        memcpy(dest->label, src->label, WH_NVM_LABEL_LEN);
+        WH_MEMCPY(dest->label, src->label, WH_NVM_LABEL_LEN);
     }
     return 0;
 }
@@ -359,7 +359,7 @@ int wh_MessageCrypto_TranslateEccKeyGenRequest(
     WH_T32(magic, dest, src, access);
     /* Label is just a byte array, no translation needed */
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
     }
     return 0;
 }
@@ -391,7 +391,7 @@ int wh_MessageCrypto_TranslateEcdhRequest(
     WH_T32(magic, dest, src, flags);
     WH_T32(magic, dest, src, keyId);
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
     }
     return 0;
 }
@@ -528,7 +528,7 @@ int wh_MessageCrypto_TranslateCurve25519KeyGenRequest(
     WH_T32(magic, dest, src, keyId);
     /* Label is just a byte array, no translation needed */
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
     }
     return 0;
 }
@@ -561,7 +561,7 @@ int wh_MessageCrypto_TranslateCurve25519Request(
     WH_T32(magic, dest, src, flags);
     WH_T32(magic, dest, src, keyId);
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
     }
     return 0;
 }
@@ -591,7 +591,7 @@ int wh_MessageCrypto_TranslateEd25519KeyGenRequest(
     WH_T32(magic, dest, src, keyId);
     WH_T32(magic, dest, src, access);
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
     }
     return 0;
 }
@@ -680,8 +680,8 @@ int wh_MessageCrypto_TranslateSha256Request(
     WH_T32(magic, dest, src, resumeState.loLen);
     /* Hash value is just a byte array, no translation needed */
     if (src != dest) {
-        memcpy(dest->resumeState.hash, src->resumeState.hash,
-               sizeof(src->resumeState.hash));
+        WH_MEMCPY(dest->resumeState.hash, src->resumeState.hash,
+                  sizeof(src->resumeState.hash));
     }
     WH_T32(magic, dest, src, isLastBlock);
     WH_T32(magic, dest, src, inSz);
@@ -704,8 +704,8 @@ int wh_MessageCrypto_TranslateSha512Request(
     WH_T32(magic, dest, src, resumeState.hashType);
     /* Hash value is just a byte array, no translation needed */
     if (src != dest) {
-        memcpy(dest->resumeState.hash, src->resumeState.hash,
-               sizeof(src->resumeState.hash));
+        WH_MEMCPY(dest->resumeState.hash, src->resumeState.hash,
+                  sizeof(src->resumeState.hash));
     }
     WH_T32(magic, dest, src, isLastBlock);
     WH_T32(magic, dest, src, inSz);
@@ -726,7 +726,7 @@ int wh_MessageCrypto_TranslateSha2Response(
     WH_T32(magic, dest, src, hashType);
     /* Hash value is just a byte array, no translation needed */
     if (src != dest) {
-        memcpy(dest->hash, src->hash, sizeof(src->hash));
+        WH_MEMCPY(dest->hash, src->hash, sizeof(src->hash));
     }
     return 0;
 }
@@ -779,7 +779,7 @@ int wh_MessageCrypto_TranslateSha3Response(
         return ret;
     }
     if (src != dest) {
-        memcpy(dest->hash, src->hash, sizeof(src->hash));
+        WH_MEMCPY(dest->hash, src->hash, sizeof(src->hash));
     }
     return 0;
 }
@@ -794,8 +794,8 @@ int wh_MessageCrypto_TranslateCmacAesState(
         return WH_ERROR_BADARGS;
     }
     /* buffer and digest are byte arrays - memcpy, no endian swap */
-    memcpy(dest->buffer, src->buffer, sizeof(dest->buffer));
-    memcpy(dest->digest, src->digest, sizeof(dest->digest));
+    WH_MEMCPY(dest->buffer, src->buffer, sizeof(dest->buffer));
+    WH_MEMCPY(dest->digest, src->digest, sizeof(dest->digest));
     WH_T32(magic, dest, src, bufferSz);
     WH_T32(magic, dest, src, totalSz);
     return 0;
@@ -846,7 +846,7 @@ int wh_MessageCrypto_TranslateMlDsaKeyGenRequest(
     WH_T32(magic, dest, src, access);
     /* Label is just a byte array, no translation needed */
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
     }
     return 0;
 }
@@ -936,7 +936,7 @@ int wh_MessageCrypto_TranslateMlKemKeyGenRequest(
     WH_T32(magic, dest, src, flags);
     WH_T32(magic, dest, src, access);
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
     }
     return 0;
 }
@@ -1052,8 +1052,8 @@ int wh_MessageCrypto_TranslateSha256DmaRequest(
     WH_T32(magic, dest, src, resumeState.hiLen);
     WH_T32(magic, dest, src, resumeState.loLen);
     if (src != dest) {
-        memcpy(dest->resumeState.hash, src->resumeState.hash,
-               sizeof(src->resumeState.hash));
+        WH_MEMCPY(dest->resumeState.hash, src->resumeState.hash,
+                  sizeof(src->resumeState.hash));
     }
 
     ret = wh_MessageCrypto_TranslateDmaBuffer(magic, &src->input, &dest->input);
@@ -1081,8 +1081,8 @@ int wh_MessageCrypto_TranslateSha512DmaRequest(
     WH_T32(magic, dest, src, resumeState.hiLen);
     WH_T32(magic, dest, src, resumeState.loLen);
     if (src != dest) {
-        memcpy(dest->resumeState.hash, src->resumeState.hash,
-               sizeof(src->resumeState.hash));
+        WH_MEMCPY(dest->resumeState.hash, src->resumeState.hash,
+                  sizeof(src->resumeState.hash));
     }
     WH_T32(magic, dest, src, resumeState.hashType);
 
@@ -1109,7 +1109,7 @@ int wh_MessageCrypto_TranslateSha2DmaResponse(
     WH_T32(magic, dest, src, hiLen);
     WH_T32(magic, dest, src, loLen);
     if (src != dest) {
-        memcpy(dest->hash, src->hash, sizeof(src->hash));
+        WH_MEMCPY(dest->hash, src->hash, sizeof(src->hash));
     }
     WH_T32(magic, dest, src, hashType);
 
@@ -1153,7 +1153,7 @@ int wh_MessageCrypto_TranslateSha3DmaResponse(
         return ret;
     }
     if (src != dest) {
-        memcpy(dest->hash, src->hash, sizeof(src->hash));
+        WH_MEMCPY(dest->hash, src->hash, sizeof(src->hash));
     }
     return wh_MessageCrypto_TranslateDmaAddrStatus(magic, &src->dmaAddrStatus,
                                                    &dest->dmaAddrStatus);
@@ -1233,7 +1233,7 @@ int wh_MessageCrypto_TranslateMlDsaKeyGenDmaRequest(
     WH_T32(magic, dest, src, labelSize);
     /* Label is just a byte array, no translation needed */
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
     }
 
     return 0;
@@ -1385,7 +1385,7 @@ int wh_MessageCrypto_TranslateMlKemKeyGenDmaRequest(
     WH_T32(magic, dest, src, access);
     WH_T32(magic, dest, src, labelSize);
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
     }
 
     return 0;
@@ -1525,9 +1525,9 @@ int wh_MessageCrypto_TranslatePqcStatefulSigKeyGenDmaRequest(
     WH_T32(magic, dest, src, lmsHeight);
     WH_T32(magic, dest, src, lmsWinternitz);
     if (src != dest) {
-        memcpy(dest->label, src->label, sizeof(src->label));
-        memcpy(dest->xmssParamStr, src->xmssParamStr,
-               sizeof(src->xmssParamStr));
+        WH_MEMCPY(dest->label, src->label, sizeof(src->label));
+        WH_MEMCPY(dest->xmssParamStr, src->xmssParamStr,
+                  sizeof(src->xmssParamStr));
     }
     return 0;
 }

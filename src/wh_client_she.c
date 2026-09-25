@@ -82,7 +82,7 @@ int wh_Client_SheSetUidRequest(whClientContext* c, uint8_t* uid, uint32_t uidSz)
 
     req = (whMessageShe_SetUidRequest*)wh_CommClient_GetDataPtr(c->comm);
 
-    memcpy(req->uid, uid, sizeof(req->uid));
+    WH_MEMCPY(req->uid, uid, sizeof(req->uid));
 
     ret = wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_SET_UID,
                                 sizeof(*req), (uint8_t*)req);
@@ -189,7 +189,7 @@ int wh_Client_SheSecureBoot(whClientContext* c, uint8_t* bootloader,
         updateReq->sz = (remaining > maxChunk) ? maxChunk : remaining;
 
         justSent = updateReq->sz;
-        memcpy(in, bootloader + bootloaderSent, updateReq->sz);
+        WH_MEMCPY(in, bootloader + bootloaderSent, updateReq->sz);
 
         ret = wh_Client_SendRequest(
             c, WH_MESSAGE_GROUP_SHE, WH_SHE_SECURE_BOOT_UPDATE,
@@ -304,7 +304,7 @@ int wh_Client_SheGetIdRequest(whClientContext* c, uint8_t* challenge,
 
     req = (whMessageShe_GetIdRequest*)wh_CommClient_GetDataPtr(c->comm);
 
-    memcpy(req->challenge, challenge, sizeof(req->challenge));
+    WH_MEMCPY(req->challenge, challenge, sizeof(req->challenge));
 
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_GET_ID,
                                  sizeof(*req), (uint8_t*)req);
@@ -335,9 +335,9 @@ int wh_Client_SheGetIdResponse(whClientContext* c, uint8_t* uid, uint8_t* sreg,
             ret = resp->rc;
         }
         else {
-            memcpy(uid, resp->uid, sizeof(resp->uid));
+            WH_MEMCPY(uid, resp->uid, sizeof(resp->uid));
             *sreg = resp->sreg;
-            memcpy(mac, resp->mac, sizeof(resp->mac));
+            WH_MEMCPY(mac, resp->mac, sizeof(resp->mac));
         }
     }
     return ret;
@@ -370,12 +370,12 @@ int wh_Client_SheLoadKeyRequest(whClientContext* c, uint8_t* messageOne,
 
     req = (whMessageShe_LoadKeyRequest*)wh_CommClient_GetDataPtr(c->comm);
     /* copy in messages 1-3 */
-    memcpy(req->messageOne, messageOne,
-           sizeof(req->messageOne));
-    memcpy(req->messageTwo, messageTwo,
-           sizeof(req->messageTwo));
-    memcpy(req->messageThree, messageThree,
-           sizeof(req->messageThree));
+    WH_MEMCPY(req->messageOne, messageOne,
+              sizeof(req->messageOne));
+    WH_MEMCPY(req->messageTwo, messageTwo,
+              sizeof(req->messageTwo));
+    WH_MEMCPY(req->messageThree, messageThree,
+              sizeof(req->messageThree));
     /* send load key req */
     ret = wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_LOAD_KEY,
                                 sizeof(*req), (uint8_t*)req);
@@ -408,8 +408,10 @@ int wh_Client_SheLoadKeyResponse(whClientContext* c, uint8_t* messageFour,
         }
         else {
             /* copy out message 4 and 5 */
-            memcpy(messageFour, resp->messageFour, sizeof(resp->messageFour));
-            memcpy(messageFive, resp->messageFive, sizeof(resp->messageFive));
+            WH_MEMCPY(messageFour, resp->messageFour,
+                      sizeof(resp->messageFour));
+            WH_MEMCPY(messageFive, resp->messageFive,
+                      sizeof(resp->messageFive));
         }
     }
     return ret;
@@ -440,7 +442,7 @@ int wh_Client_SheLoadPlainKeyRequest(whClientContext* c, uint8_t* key,
 
     req = (whMessageShe_LoadPlainKeyRequest*)wh_CommClient_GetDataPtr(c->comm);
 
-    memcpy(req->key, key, WH_SHE_KEY_SZ);
+    WH_MEMCPY(req->key, key, WH_SHE_KEY_SZ);
 
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_LOAD_PLAIN_KEY,
                                  sizeof(*req), (uint8_t*)req);
@@ -525,12 +527,14 @@ int wh_Client_SheExportRamKeyResponse(whClientContext* c, uint8_t* messageOne,
             ret = resp->rc;
         }
         else {
-            memcpy(messageOne, resp->messageOne, sizeof(resp->messageOne));
-            memcpy(messageTwo, resp->messageTwo, sizeof(resp->messageTwo));
-            memcpy(messageThree, resp->messageThree,
-                   sizeof(resp->messageThree));
-            memcpy(messageFour, resp->messageFour, sizeof(resp->messageFour));
-            memcpy(messageFive, resp->messageFive, sizeof(resp->messageFive));
+            WH_MEMCPY(messageOne, resp->messageOne, sizeof(resp->messageOne));
+            WH_MEMCPY(messageTwo, resp->messageTwo, sizeof(resp->messageTwo));
+            WH_MEMCPY(messageThree, resp->messageThree,
+                      sizeof(resp->messageThree));
+            WH_MEMCPY(messageFour, resp->messageFour,
+                      sizeof(resp->messageFour));
+            WH_MEMCPY(messageFive, resp->messageFive,
+                      sizeof(resp->messageFive));
         }
     }
 
@@ -633,7 +637,7 @@ int wh_Client_SheRndResponse(whClientContext* c, uint8_t* out, uint32_t* outSz)
         if (resp->rc != WH_SHE_ERC_NO_ERROR)
             ret = resp->rc;
         else {
-            memcpy(out, resp->rnd, sizeof(resp->rnd));
+            WH_MEMCPY(out, resp->rnd, sizeof(resp->rnd));
             *outSz = sizeof(resp->rnd);
         }
     }
@@ -665,7 +669,7 @@ int wh_Client_SheExtendSeedRequest(whClientContext* c, uint8_t* entropy,
     req = (whMessageShe_ExtendSeedRequest*)wh_CommClient_GetDataPtr(c->comm);
 
     /* set entropy */
-    memcpy(req->entropy, entropy, sizeof(req->entropy));
+    WH_MEMCPY(req->entropy, entropy, sizeof(req->entropy));
 
     /* send init rng req */
     ret = wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_EXTEND_SEED,
@@ -730,7 +734,7 @@ int wh_Client_SheEncEcbRequest(whClientContext* c, uint8_t keyId, uint8_t* in,
     packIn     = (uint8_t*)(req + 1);
     req->keyId = keyId;
     req->sz    = sz;
-    memcpy(packIn, in, sz);
+    WH_MEMCPY(packIn, in, sz);
 
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_ENC_ECB,
                                  sizeof(*req) + sz, (uint8_t*)req);
@@ -770,7 +774,7 @@ int wh_Client_SheEncEcbResponse(whClientContext* c, uint8_t* out, uint32_t sz)
             ret = WH_ERROR_BADARGS;
         }
         else {
-            memcpy(out, packOut, resp->sz);
+            WH_MEMCPY(out, packOut, resp->sz);
         }
     }
     return ret;
@@ -807,9 +811,9 @@ int wh_Client_SheEncCbcRequest(whClientContext* c, uint8_t keyId, uint8_t* iv,
     req->keyId = keyId;
     req->sz    = sz;
     /* set iv */
-    memcpy(req->iv, iv, ivSz);
+    WH_MEMCPY(req->iv, iv, ivSz);
     /* set in */
-    memcpy(packIn, in, sz);
+    WH_MEMCPY(packIn, in, sz);
 
     /* send enc ecb */
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_ENC_CBC,
@@ -849,7 +853,7 @@ int wh_Client_SheEncCbcResponse(whClientContext* c, uint8_t* out, uint32_t sz)
             ret = WH_ERROR_BADARGS;
         }
         else {
-            memcpy(out, packOut, resp->sz);
+            WH_MEMCPY(out, packOut, resp->sz);
         }
     }
     return ret;
@@ -884,7 +888,7 @@ int wh_Client_SheDecEcbRequest(whClientContext* c, uint8_t keyId, uint8_t* in,
     packIn     = (uint8_t*)(req + 1);
     req->keyId = keyId;
     req->sz    = sz;
-    memcpy(packIn, in, sz);
+    WH_MEMCPY(packIn, in, sz);
 
     /* send enc ecb */
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_DEC_ECB,
@@ -924,7 +928,7 @@ int wh_Client_SheDecEcbResponse(whClientContext* c, uint8_t* out, uint32_t sz)
             ret = WH_ERROR_BADARGS;
         }
         else {
-            memcpy(out, packOut, resp->sz);
+            WH_MEMCPY(out, packOut, resp->sz);
         }
     }
     return ret;
@@ -961,9 +965,9 @@ int wh_Client_SheDecCbcRequest(whClientContext* c, uint8_t keyId, uint8_t* iv,
     req->keyId = keyId;
     req->sz    = sz;
     /* set iv */
-    memcpy(req->iv, iv, ivSz);
+    WH_MEMCPY(req->iv, iv, ivSz);
     /* set in */
-    memcpy(packIn, in, sz);
+    WH_MEMCPY(packIn, in, sz);
 
     /* send enc ecb */
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_DEC_CBC,
@@ -1003,7 +1007,7 @@ int wh_Client_SheDecCbcResponse(whClientContext* c, uint8_t* out, uint32_t sz)
             ret = WH_ERROR_BADARGS;
         }
         else {
-            memcpy(out, packOut, resp->sz);
+            WH_MEMCPY(out, packOut, resp->sz);
         }
     }
     return ret;
@@ -1039,7 +1043,7 @@ int wh_Client_SheGenerateMacRequest(whClientContext* c, uint8_t keyId,
     req->keyId = keyId;
     req->sz    = sz;
     /* set in */
-    memcpy(packIn, in, sz);
+    WH_MEMCPY(packIn, in, sz);
 
     /* send enc ecb */
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_GEN_MAC,
@@ -1071,7 +1075,7 @@ int wh_Client_SheGenerateMacResponse(whClientContext* c, uint8_t* out,
             ret = resp->rc;
         }
         else {
-            memcpy(out, resp->mac, WH_SHE_KEY_SZ);
+            WH_MEMCPY(out, resp->mac, WH_SHE_KEY_SZ);
         }
     }
     return ret;
@@ -1114,8 +1118,8 @@ int wh_Client_SheVerifyMacRequest(whClientContext* c, uint8_t keyId,
     req->messageLen = messageLen;
     req->macLen     = WH_SHE_KEY_SZ;
     /* set message */
-    memcpy(messageIn, message, messageLen);
-    memcpy(macIn, mac, WH_SHE_KEY_SZ);
+    WH_MEMCPY(messageIn, message, messageLen);
+    WH_MEMCPY(macIn, mac, WH_SHE_KEY_SZ);
 
     /* send verify mac */
     ret = wh_Client_SendRequest(c, WH_MESSAGE_GROUP_SHE, WH_SHE_VERIFY_MAC,

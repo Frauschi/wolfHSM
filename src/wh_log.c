@@ -66,10 +66,10 @@ void wh_Log_AddMsg(whLogContext* ctx, whLogLevel level, const char* file,
                            .msg_len   = (uint32_t)copy_len};
 
     if ((msg != NULL) && (copy_len > 0)) {
-        memcpy(entry.msg, msg, copy_len);
+        WH_MEMCPY(entry.msg, msg, copy_len);
     }
     /* Zero-pad remainder of message buffer to prevent information leakage */
-    memset(&entry.msg[copy_len], 0, WOLFHSM_CFG_LOG_MSG_MAX - copy_len);
+    WH_MEMSET(&entry.msg[copy_len], 0, WOLFHSM_CFG_LOG_MSG_MAX - copy_len);
 
     wh_Log_AddEntry(ctx, &entry);
 }

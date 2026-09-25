@@ -122,7 +122,7 @@ static int _LookupSubsetUnlocked(const whCertVerifyCacheContext* cache,
     for (i = 0; i < WOLFHSM_CFG_CERT_VERIFY_CACHE_COUNT; i++) {
         const whCertVerifyCacheSlot* slot = &cache->slots[i];
         if (slot->committed &&
-            (memcmp(slot->hash, hash, WH_CERT_VERIFY_CACHE_HASH_LEN) == 0) &&
+            (WH_MEMCMP(slot->hash, hash, WH_CERT_VERIFY_CACHE_HASH_LEN) == 0) &&
             _IsSubsetOf(slot->rootNvmIds, slot->numRoots, rootNvmIds,
                         numRoots)) {
             return WH_ERROR_OK;
@@ -142,7 +142,7 @@ static int _HasExactSlotUnlocked(const whCertVerifyCacheContext* cache,
     for (i = 0; i < WOLFHSM_CFG_CERT_VERIFY_CACHE_COUNT; i++) {
         const whCertVerifyCacheSlot* slot = &cache->slots[i];
         if (slot->committed && (slot->numRoots == numRoots) &&
-            (memcmp(slot->hash, hash, WH_CERT_VERIFY_CACHE_HASH_LEN) == 0) &&
+            (WH_MEMCMP(slot->hash, hash, WH_CERT_VERIFY_CACHE_HASH_LEN) == 0) &&
             _IsSubsetOf(slot->rootNvmIds, slot->numRoots, rootNvmIds,
                         numRoots)) {
             return 1;
@@ -224,7 +224,7 @@ void wh_Server_CertVerifyCache_Insert(whServerContext* server,
         for (k = 0; k < numRoots; k++) {
             slot->rootNvmIds[k] = rootNvmIds[k];
         }
-        memcpy(slot->hash, hash, WH_CERT_VERIFY_CACHE_HASH_LEN);
+        WH_MEMCPY(slot->hash, hash, WH_CERT_VERIFY_CACHE_HASH_LEN);
         slot->committed = 1;
         cache->writeIdx =
             (uint16_t)((idx + 1) % WOLFHSM_CFG_CERT_VERIFY_CACHE_COUNT);
@@ -252,7 +252,7 @@ int wh_Server_CertVerifyCache_Clear(whServerContext* server)
     /* Clear payload only; the embedded lock (when present) must survive a
      * Clear, otherwise the next operation would acquire an uninitialized
      * lock. */
-    memset(cache->slots, 0, sizeof(cache->slots));
+    WH_MEMSET(cache->slots, 0, sizeof(cache->slots));
     cache->writeIdx = 0;
     (void)_UnlockVerifyCache(cache);
     return WH_ERROR_OK;
@@ -281,7 +281,7 @@ int wh_Server_CertVerifyCache_SetEnabled(whServerContext* server,
      * Mirrors the payload-only clear done by wh_Server_CertVerifyCache_Clear:
      * the embedded lock (when present) must survive. */
     if (!enable) {
-        memset(cache->slots, 0, sizeof(cache->slots));
+        WH_MEMSET(cache->slots, 0, sizeof(cache->slots));
         cache->writeIdx = 0;
     }
     cache->enabled = enable ? 1 : 0;
@@ -320,7 +320,7 @@ int wh_Server_CertVerifyCache_EvictRoot(whServerContext* server,
             uint16_t k;
             for (k = 0; k < slot->numRoots; k++) {
                 if (slot->rootNvmIds[k] == rootNvmId) {
-                    memset(slot, 0, sizeof(*slot));
+                    WH_MEMSET(slot, 0, sizeof(*slot));
                     break;
                 }
             }
@@ -518,8 +518,8 @@ static int _verifyChainAgainstCmStore(
                                 cachedKeyFlags & ~WH_NVM_FLAGS_SERVER_ONLY;
                             cacheMeta->access  = WH_NVM_ACCESS_ANY;
                             cacheMeta->id      = *inout_keyId;
-                            memset(cacheMeta->label, 0,
-                                   sizeof(cacheMeta->label));
+                            WH_MEMSET(cacheMeta->label, 0,
+                                      sizeof(cacheMeta->label));
                             strncpy((char*)cacheMeta->label, label,
                                     sizeof(cacheMeta->label));
                         }
@@ -611,15 +611,15 @@ int wh_Server_CertAddTrusted(whServerContext* server, whNvmId id,
     metadata.access = access;
     metadata.flags  = flags;
     metadata.len    = cert_len;
-    memset(metadata.label, 0, WH_NVM_LABEL_LEN);
+    WH_MEMSET(metadata.label, 0, WH_NVM_LABEL_LEN);
     if (label != NULL && label_len > 0) {
         whNvmSize copy_len =
             (label_len > WH_NVM_LABEL_LEN) ? WH_NVM_LABEL_LEN : label_len;
-        memcpy(metadata.label, label, copy_len);
+        WH_MEMCPY(metadata.label, label, copy_len);
     }
     else {
         /* Default label if none provided */
-        memcpy(metadata.label, "trusted_cert", sizeof("trusted_cert"));
+        WH_MEMCPY(metadata.label, "trusted_cert", sizeof("trusted_cert"));
     }
 
     /* Client-driven path: checked add strips server-only flags and refuses

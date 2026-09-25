@@ -227,7 +227,7 @@ int wh_Server_HandleNvmRequest(whServerContext* server,
                 resp.access = meta.access;
                 resp.flags  = meta.flags;
                 resp.len    = meta.len;
-                memcpy(resp.label, meta.label, sizeof(resp.label));
+                WH_MEMCPY(resp.label, meta.label, sizeof(resp.label));
             }
             resp.rc = rc;
         }
@@ -258,7 +258,7 @@ int wh_Server_HandleNvmRequest(whServerContext* server,
                 meta.access = req.access;
                 meta.flags = req.flags;
                 meta.len = req.len;
-                memcpy(meta.label, req.label, sizeof(meta.label));
+                WH_MEMCPY(meta.label, req.label, sizeof(meta.label));
 
                 rc = WH_ERROR_OK;
 #if !defined(WOLFHSM_CFG_NO_CRYPTO) && \

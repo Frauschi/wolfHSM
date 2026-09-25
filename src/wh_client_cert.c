@@ -132,7 +132,7 @@ int wh_Client_CertAddTrustedRequest(whClientContext* c, whNvmId id,
     }
 
     /* Prepare request */
-    memset(&req, 0, sizeof(req));
+    WH_MEMSET(&req, 0, sizeof(req));
     req.id       = id;
     req.access   = access;
     req.flags    = flags;
@@ -140,12 +140,12 @@ int wh_Client_CertAddTrustedRequest(whClientContext* c, whNvmId id,
     if (label != NULL && label_len > 0) {
         whNvmSize copy_len =
             (label_len > WH_NVM_LABEL_LEN) ? WH_NVM_LABEL_LEN : label_len;
-        memcpy(req.label, label, copy_len);
+        WH_MEMCPY(req.label, label, copy_len);
     }
 
     /* Copy request struct and certificate data */
-    memcpy(buffer, &req, hdr_len);
-    memcpy(payload, cert, cert_len);
+    WH_MEMCPY(buffer, &req, hdr_len);
+    WH_MEMCPY(payload, cert, cert_len);
 
     /* Send request */
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_CERT,
@@ -340,7 +340,7 @@ int wh_Client_CertReadTrustedResponse(whClientContext* c, uint8_t* cert,
                     }
                 }
                 else {
-                    memcpy(cert, payload, resp->cert_len);
+                    WH_MEMCPY(cert, payload, resp->cert_len);
                     *cert_len = resp->cert_len;
                 }
             }
@@ -396,8 +396,8 @@ static int _certVerifyRequest(whClientContext* c, const uint8_t* cert,
     req.keyId            = keyId;
 
     /* Copy request struct and certificate data */
-    memcpy(buffer, &req, hdr_len);
-    memcpy(payload, cert, cert_len);
+    WH_MEMCPY(buffer, &req, hdr_len);
+    WH_MEMCPY(payload, cert, cert_len);
 
     /* Send request */
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_CERT,
@@ -549,11 +549,11 @@ static int _certVerifyMultiRootRequest(whClientContext* c, const uint8_t* cert,
     req.keyId          = keyId;
 
     /* Pack header, root array, then certificate data */
-    memcpy(buffer, &req, hdr_len);
+    WH_MEMCPY(buffer, &req, hdr_len);
     roots_dst = buffer + hdr_len;
-    memcpy(roots_dst, trustedRootNvmIds, roots_bytes);
+    WH_MEMCPY(roots_dst, trustedRootNvmIds, roots_bytes);
     cert_dst = roots_dst + roots_bytes;
-    memcpy(cert_dst, cert, cert_len);
+    WH_MEMCPY(cert_dst, cert, cert_len);
 
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_CERT,
                                  WH_MESSAGE_CERT_ACTION_VERIFY_MULTI_ROOT,
@@ -837,7 +837,7 @@ int wh_Client_CertAddTrustedDmaRequest(whClientContext* c, whNvmId id,
         if (label != NULL && label_len > 0) {
             whNvmSize copy_len =
                 (label_len > WH_NVM_LABEL_LEN) ? WH_NVM_LABEL_LEN : label_len;
-            memcpy(req.label, label, copy_len);
+            WH_MEMCPY(req.label, label, copy_len);
         }
         rc = wh_Client_SendRequest(c, WH_MESSAGE_GROUP_CERT,
                                    WH_MESSAGE_CERT_ACTION_ADDTRUSTED_DMA,
@@ -1207,8 +1207,8 @@ static int _certVerifyMultiRootDmaRequest(
         req.keyId          = keyId;
         /* Only the first numRoots entries are meaningful; remaining slots stay
          * zeroed by the initializer above. */
-        memcpy(req.trustedRootNvmIds, trustedRootNvmIds,
-               (size_t)numRoots * sizeof(whNvmId));
+        WH_MEMCPY(req.trustedRootNvmIds, trustedRootNvmIds,
+                  (size_t)numRoots * sizeof(whNvmId));
 
         rc = wh_Client_SendRequest(
             c, WH_MESSAGE_GROUP_CERT,
@@ -1373,8 +1373,8 @@ int wh_Client_CertVerifyAcertRequest(whClientContext* c, const void* cert,
     req.cert_len         = cert_len;
     req.trustedRootNvmId = trustedRootNvmId;
 
-    memcpy(buffer, &req, sizeof(req));
-    memcpy(payload, cert, cert_len);
+    WH_MEMCPY(buffer, &req, sizeof(req));
+    WH_MEMCPY(payload, cert, cert_len);
 
     return wh_Client_SendRequest(c, WH_MESSAGE_GROUP_CERT,
                                  WH_MESSAGE_CERT_ACTION_VERIFY_ACERT,

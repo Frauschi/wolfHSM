@@ -134,11 +134,11 @@ static int wh_Auth_BasePersistIndex(void)
 
     /* Serialize magic + a whAuthUser per slot (method/credentials_len live in
      * the credential object). memcpy since buf has no alignment guarantee. */
-    memcpy(buf, &magic, sizeof(magic));
+    WH_MEMCPY(buf, &magic, sizeof(magic));
     for (i = 0; i < WH_AUTH_BASE_MAX_USERS; i++) {
         size_t off = WH_AUTH_BASE_NVM_HEADER_SIZE +
                      ((size_t)i * sizeof(whAuthUser));
-        memcpy(buf + off, &users[i].user, sizeof(whAuthUser));
+        WH_MEMCPY(buf + off, &users[i].user, sizeof(whAuthUser));
         /* Clear is_active in the serialized copy; session state is not
          * persisted. */
         buf[off + offsetof(whAuthUser, is_active)] = 0;
@@ -154,8 +154,8 @@ static int wh_Auth_BasePersistIndex(void)
     meta.flags = WH_NVM_FLAGS_SENSITIVE | WH_NVM_FLAGS_NONEXPORTABLE |
                  WH_NVM_FLAGS_NONMODIFIABLE;
     meta.len = (whNvmSize)WH_AUTH_BASE_NVM_INDEX_SIZE;
-    memset(meta.label, 0, sizeof(meta.label));
-    memcpy(meta.label, "auth_user_idx", 13);
+    WH_MEMSET(meta.label, 0, sizeof(meta.label));
+    WH_MEMCPY(meta.label, "auth_user_idx", 13);
 
     rc = WH_NVM_LOCK(s_auth_base_nvm);
     if (rc == WH_ERROR_OK) {
@@ -186,7 +186,7 @@ static int wh_Auth_BasePersistCred(uint16_t user_id, whAuthMethod method,
         uint8_t* slot = s_auth_base_ram_cred[user_id - 1];
         wh_Utils_ForceZero(slot, WH_AUTH_BASE_MAX_CREDENTIALS_LEN);
         if (len > 0) {
-            memcpy(slot, buf, len);
+            WH_MEMCPY(slot, buf, len);
         }
         return WH_ERROR_OK;
 #else
@@ -206,9 +206,9 @@ static int wh_Auth_BasePersistCred(uint16_t user_id, whAuthMethod method,
     meta.flags = WH_NVM_FLAGS_SENSITIVE | WH_NVM_FLAGS_NONEXPORTABLE |
                  WH_NVM_FLAGS_NONMODIFIABLE;
     meta.len = len;
-    memset(meta.label, 0, sizeof(meta.label));
-    memcpy(meta.label, WH_AUTH_BASE_CRED_LABEL,
-           sizeof(WH_AUTH_BASE_CRED_LABEL) - 1);
+    WH_MEMSET(meta.label, 0, sizeof(meta.label));
+    WH_MEMCPY(meta.label, WH_AUTH_BASE_CRED_LABEL,
+              sizeof(WH_AUTH_BASE_CRED_LABEL) - 1);
     /* Method rides in the reserved trailing label byte (kept out of the index) */
     meta.label[WH_AUTH_BASE_CRED_LABEL_METHOD_IDX] = (uint8_t)method;
 
@@ -239,7 +239,7 @@ static int wh_Auth_BaseLoadCred(uint16_t user_id, uint8_t* out,
         if (len == 0) {
             return WH_ERROR_NOTFOUND;
         }
-        memcpy(out, s_auth_base_ram_cred[user_id - 1], len);
+        WH_MEMCPY(out, s_auth_base_ram_cred[user_id - 1], len);
         *out_len = len;
         return WH_ERROR_OK;
 #else
@@ -365,7 +365,7 @@ static int wh_Auth_BaseLoadFromNvm(void)
 
     /* Validate magic via memcpy into a local integer; buf has no alignment
      * guarantee for wider integer access */
-    memcpy(&magic, buf, sizeof(magic));
+    WH_MEMCPY(&magic, buf, sizeof(magic));
     if (magic != WH_AUTH_BASE_NVM_MAGIC) {
         /* Unknown format, no migration path: fatal, do not start fresh */
         wh_Utils_ForceZero(buf, WH_AUTH_BASE_NVM_INDEX_SIZE);
@@ -373,7 +373,7 @@ static int wh_Auth_BaseLoadFromNvm(void)
     }
 
     /* Clear the RAM cache (method/credentials_len are not persisted) first. */
-    memset(users, 0, sizeof(users));
+    WH_MEMSET(users, 0, sizeof(users));
 
     /* Deserialize each whAuthUser slot. A valid-magic index may still be corrupt,
      * so sanitize/validate each slot and abort on anything UserAdd can't produce. */
@@ -383,8 +383,9 @@ static int wh_Auth_BaseLoadFromNvm(void)
         uint16_t     cred_len    = 0;
         int          hrc;
 
-        memcpy(u, buf + WH_AUTH_BASE_NVM_HEADER_SIZE + (size_t)i * sizeof(*u),
-               sizeof(*u));
+        WH_MEMCPY(u,
+                  buf + WH_AUTH_BASE_NVM_HEADER_SIZE + (size_t)i * sizeof(*u),
+                  sizeof(*u));
 
         /* Guarantee termination so strcmp() cannot overread the name buffer */
         u->username[sizeof(u->username) - 1] = '\0';
@@ -440,7 +441,7 @@ int wh_Auth_BaseInit(void* context, const void* config)
 {
     (void)context;
 
-    memset(users, 0, sizeof(users));
+    WH_MEMSET(users, 0, sizeof(users));
     s_auth_base_nvm = NULL;
 
     /* Clear scratch/credential buffers so re-init doesn't leave sensitive data
@@ -503,7 +504,7 @@ static int wh_Auth_BaseHashPin(const void* pin, uint16_t pin_len,
     if (pin_len > WH_AUTH_BASE_MAX_CREDENTIALS_LEN) {
         return WH_ERROR_BUFFER_SIZE;
     }
-    memcpy(hash_out, pin, pin_len);
+    WH_MEMCPY(hash_out, pin, pin_len);
     return WH_ERROR_OK;
 #endif /* WOLFHSM_CFG_NO_CRYPTO */
 }
@@ -746,7 +747,7 @@ int wh_Auth_BaseUserAdd(void* context, const char* username,
     }
     new_user = &users[userId - 1];
 
-    memset(new_user, 0, sizeof(whAuthBase_User));
+    WH_MEMSET(new_user, 0, sizeof(whAuthBase_User));
     new_user->user.user_id     = userId;
     *out_user_id               = userId;
     new_user->user.permissions = permissions;
@@ -787,7 +788,7 @@ int wh_Auth_BaseUserAdd(void* context, const char* username,
                 rc = WH_ERROR_BUFFER_SIZE;
             }
             else {
-                memcpy(s_auth_base_cred_buf, credentials, credentials_len);
+                WH_MEMCPY(s_auth_base_cred_buf, credentials, credentials_len);
                 cred_len = credentials_len;
             }
 #endif /* WOLFHSM_CFG_NO_CRYPTO */
@@ -797,7 +798,7 @@ int wh_Auth_BaseUserAdd(void* context, const char* username,
                 rc = WH_ERROR_BUFFER_SIZE;
             }
             else {
-                memcpy(s_auth_base_cred_buf, credentials, credentials_len);
+                WH_MEMCPY(s_auth_base_cred_buf, credentials, credentials_len);
                 cred_len = credentials_len;
             }
         }
@@ -868,7 +869,7 @@ int wh_Auth_BaseUserDelete(void* context, uint16_t current_user_id,
 
     /* Save the record so a failed NVM persist can be rolled back, keeping
      * RAM consistent with what is stored in NVM */
-    memcpy(&s_auth_base_backup, user, sizeof(whAuthBase_User));
+    WH_MEMCPY(&s_auth_base_backup, user, sizeof(whAuthBase_User));
     wh_Utils_ForceZero(user, sizeof(whAuthBase_User));
 
     /* Persist the index with the entry removed first; the credential blob is
@@ -877,14 +878,14 @@ int wh_Auth_BaseUserDelete(void* context, uint16_t current_user_id,
      * the record and leave the blob in place. */
     rc = wh_Auth_BasePersistIndex();
     if (rc != WH_ERROR_OK) {
-        memcpy(user, &s_auth_base_backup, sizeof(whAuthBase_User));
+        WH_MEMCPY(user, &s_auth_base_backup, sizeof(whAuthBase_User));
     }
     else if (s_auth_base_backup.credentials_len > 0) {
         /* A lingering blob could resurrect the credential if the slot is reused,
          * so a destroy failure is fatal: roll the deletion back. */
         rc = wh_Auth_BaseDestroyCred(user_id);
         if (rc != WH_ERROR_OK) {
-            memcpy(user, &s_auth_base_backup, sizeof(whAuthBase_User));
+            WH_MEMCPY(user, &s_auth_base_backup, sizeof(whAuthBase_User));
             (void)wh_Auth_BasePersistIndex();
         }
     }
@@ -1117,12 +1118,14 @@ int wh_Auth_BaseUserSetCredentials(void* context, uint16_t current_user_id,
                 new_len = WC_SHA256_DIGEST_SIZE;
             }
 #else
-            memcpy(s_auth_base_cred_buf, new_credentials, new_credentials_len);
+            WH_MEMCPY(s_auth_base_cred_buf, new_credentials,
+                      new_credentials_len);
             new_len = new_credentials_len;
 #endif /* WOLFHSM_CFG_NO_CRYPTO */
         }
         else {
-            memcpy(s_auth_base_cred_buf, new_credentials, new_credentials_len);
+            WH_MEMCPY(s_auth_base_cred_buf, new_credentials,
+                      new_credentials_len);
             new_len = new_credentials_len;
         }
     }

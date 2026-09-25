@@ -63,8 +63,8 @@ int wh_Bench_Init(whBenchOpContext* ctx, whBenchOp* ops, int maxOps)
     }
 
     /* Clear the context and all benchmark operations */
-    memset(ctx, 0, sizeof(*ctx));
-    memset(ops, 0, (size_t)maxOps * sizeof(*ops));
+    WH_MEMSET(ctx, 0, sizeof(*ctx));
+    WH_MEMSET(ops, 0, (size_t)maxOps * sizeof(*ops));
 
     ctx->ops    = ops;
     ctx->maxOps = maxOps;
@@ -415,11 +415,11 @@ int wh_Bench_Cleanup(whBenchOpContext* ctx)
 
     /* Clear the caller's ops array so no name pointers outlive cleanup */
     if ((ctx->ops != NULL) && (ctx->maxOps > 0)) {
-        memset(ctx->ops, 0, (size_t)ctx->maxOps * sizeof(*ctx->ops));
+        WH_MEMSET(ctx->ops, 0, (size_t)ctx->maxOps * sizeof(*ctx->ops));
     }
 
     /* Clear benchmark context */
-    memset(ctx, 0, sizeof(whBenchOpContext));
+    WH_MEMSET(ctx, 0, sizeof(whBenchOpContext));
 
     return WH_ERROR_OK;
 }

@@ -299,7 +299,7 @@ int wh_Server_CacheImportRsaKey(whServerContext* ctx, RsaKey* key,
 
         if (    (label != NULL) &&
                 (label_len > 0) ) {
-            memcpy(cacheMeta->label, label, label_len);
+            WH_MEMCPY(cacheMeta->label, label, label_len);
         }
     }
     return ret;
@@ -685,7 +685,7 @@ int wh_Server_EccKeyCacheImport(whServerContext* ctx, ecc_key* key,
 
         if (    (label != NULL) &&
                 (label_len > 0) ) {
-            memcpy(cacheMeta->label, label, label_len);
+            WH_MEMCPY(cacheMeta->label, label, label_len);
         }
     }
     return ret;
@@ -773,7 +773,7 @@ int wh_Server_CacheImportEd25519Key(whServerContext* ctx, ed25519_key* key,
         cacheMeta->access = WH_NVM_ACCESS_ANY;
 
         if ((label != NULL) && (label_len > 0)) {
-            memcpy(cacheMeta->label, label, label_len);
+            WH_MEMCPY(cacheMeta->label, label, label_len);
         }
     }
 
@@ -855,7 +855,7 @@ int wh_Server_CacheImportCurve25519Key(whServerContext* server,
         ret = wh_Server_KeystoreGetCacheSlotChecked(server, keyId, keySz,
                                                     &cacheBuf, &cacheMeta);
         if (ret == 0) {
-            memcpy(cacheBuf, der_buf, keySz);
+            WH_MEMCPY(cacheBuf, der_buf, keySz);
             /* Update metadata to cache the key */
             cacheMeta->id     = keyId;
             cacheMeta->len    = keySz;
@@ -863,7 +863,7 @@ int wh_Server_CacheImportCurve25519Key(whServerContext* server,
             cacheMeta->flags  = flags & ~WH_NVM_FLAGS_SERVER_ONLY;
             cacheMeta->access = WH_NVM_ACCESS_ANY;
             if ((label != NULL) && (label_len > 0)) {
-                memcpy(cacheMeta->label, label, label_len);
+                WH_MEMCPY(cacheMeta->label, label, label_len);
             }
         }
     }
@@ -970,7 +970,7 @@ int wh_Server_MlDsaKeyCacheImport(whServerContext* ctx, wc_MlDsaKey* key,
         cacheMeta->access = WH_NVM_ACCESS_ANY;
 
         if ((label != NULL) && (label_len > 0)) {
-            memcpy(cacheMeta->label, label, label_len);
+            WH_MEMCPY(cacheMeta->label, label, label_len);
         }
     }
 
@@ -1064,7 +1064,7 @@ int wh_Server_MlKemKeyCacheImport(whServerContext* ctx, MlKemKey* key,
         cacheMeta->flags  = flags & ~WH_NVM_FLAGS_SERVER_ONLY;
         cacheMeta->access = WH_NVM_ACCESS_ANY;
         if ((label != NULL) && (label_len > 0)) {
-            memcpy(cacheMeta->label, label, label_len);
+            WH_MEMCPY(cacheMeta->label, label, label_len);
         }
     }
 
@@ -1158,7 +1158,7 @@ static uint16_t _StatefulSigPrivOffset(const whServerStatefulSigCtx* b)
 static void _StatefulSigWritePrivLen(uint8_t* slotBuf, uint16_t privLen)
 {
     uint8_t* p = slotBuf + offsetof(whCryptoStatefulSigHeader, privLen);
-    memcpy(p, &privLen, sizeof(privLen));
+    WH_MEMCPY(p, &privLen, sizeof(privLen));
 }
 
 #if defined(WOLFSSL_HAVE_LMS) && defined(WOLFHSM_CFG_DMA) && \
@@ -1181,7 +1181,7 @@ static int _LmsSlotWriteCb(const byte* priv, word32 privSz, void* context)
         return WC_LMS_RC_WRITE_FAIL;
     }
 
-    memcpy(b->slotBuf + privOff, priv, privSz);
+    WH_MEMCPY(b->slotBuf + privOff, priv, privSz);
     _StatefulSigWritePrivLen(b->slotBuf, (uint16_t)privSz);
     b->meta->len = (whNvmSize)newLen;
 
@@ -1208,7 +1208,7 @@ static int _LmsSlotReadCb(byte* priv, word32 privSz, void* context)
         return WC_LMS_RC_READ_FAIL;
     }
 
-    memcpy(priv, b->slotBuf + privOff, privSz);
+    WH_MEMCPY(priv, b->slotBuf + privOff, privSz);
     return WC_LMS_RC_READ_TO_MEMORY;
 }
 #endif /* WOLFSSL_HAVE_LMS && WOLFHSM_CFG_DMA && !WOLFSSL_LMS_VERIFY_ONLY */
@@ -1234,7 +1234,7 @@ static enum wc_XmssRc _XmssSlotWriteCb(const byte* priv, word32 privSz,
         return WC_XMSS_RC_WRITE_FAIL;
     }
 
-    memcpy(b->slotBuf + privOff, priv, privSz);
+    WH_MEMCPY(b->slotBuf + privOff, priv, privSz);
     _StatefulSigWritePrivLen(b->slotBuf, (uint16_t)privSz);
     b->meta->len = (whNvmSize)newLen;
 
@@ -1259,7 +1259,7 @@ static enum wc_XmssRc _XmssSlotReadCb(byte* priv, word32 privSz,
         return WC_XMSS_RC_READ_FAIL;
     }
 
-    memcpy(priv, b->slotBuf + privOff, privSz);
+    WH_MEMCPY(priv, b->slotBuf + privOff, privSz);
     return WC_XMSS_RC_READ_TO_MEMORY;
 }
 #endif /* WOLFSSL_HAVE_XMSS && WOLFHSM_CFG_DMA && !WOLFSSL_XMSS_VERIFY_ONLY */
@@ -1298,7 +1298,7 @@ int wh_Server_LmsKeyCacheImport(whServerContext* ctx, LmsKey* key,
             (flags & ~WH_NVM_FLAGS_SERVER_ONLY) | WH_NVM_FLAGS_NONEXPORTABLE;
         cacheMeta->access = WH_NVM_ACCESS_ANY;
         if ((label != NULL) && (label_len > 0)) {
-            memcpy(cacheMeta->label, label, label_len);
+            WH_MEMCPY(cacheMeta->label, label, label_len);
         }
     }
     return ret;
@@ -1361,7 +1361,7 @@ int wh_Server_XmssKeyCacheImport(whServerContext* ctx, XmssKey* key,
             (flags & ~WH_NVM_FLAGS_SERVER_ONLY) | WH_NVM_FLAGS_NONEXPORTABLE;
         cacheMeta->access = WH_NVM_ACCESS_ANY;
         if ((label != NULL) && (label_len > 0)) {
-            memcpy(cacheMeta->label, label, label_len);
+            WH_MEMCPY(cacheMeta->label, label, label_len);
         }
     }
     return ret;
@@ -1589,7 +1589,7 @@ static int _HandleEccSharedSecret(whServerContext* ctx, uint16_t magic,
         } /* WH_SERVER_NVM_LOCK() */
         /* Scrub the secret from the response buffer regardless of import
          * success/failure. */
-        memset(res_out, 0, res_len);
+        WH_MEMSET(res_out, 0, res_len);
         /* If the cached output id collides with an auto-imported input id,
          * suppress the matching eviction so cleanup does not delete the
          * just-cached secret. */
@@ -1957,7 +1957,7 @@ static int _HandleEccCheckPubKey(whServerContext* ctx, uint16_t magic,
 
                 ret = wc_ecc_export_x963(key, pub, &pub_size);
                 if ((ret == 0) && ((pub_size != req.pubSz) ||
-                                   (memcmp(pub, req_pub, pub_size) != 0))) {
+                                   (WH_MEMCMP(pub, req_pub, pub_size) != 0))) {
                     ret = ECC_PRIV_KEY_E;
                 }
             }
@@ -2060,7 +2060,7 @@ int wh_Server_KeyCacheImportRaw(whServerContext* ctx, const uint8_t* keyData,
     ret = wh_Server_KeystoreGetCacheSlotChecked(ctx, keyId, keySize, &cacheBuf,
                                                 &cacheMeta);
     if (ret == WH_ERROR_OK) {
-        memcpy(cacheBuf, keyData, keySize);
+        WH_MEMCPY(cacheBuf, keyData, keySize);
 
         cacheMeta->id     = keyId;
         cacheMeta->len    = keySize;
@@ -2069,7 +2069,7 @@ int wh_Server_KeyCacheImportRaw(whServerContext* ctx, const uint8_t* keyData,
         cacheMeta->access = WH_NVM_ACCESS_ANY;
 
         if ((label != NULL) && (label_len > 0)) {
-            memcpy(cacheMeta->label, label, label_len);
+            WH_MEMCPY(cacheMeta->label, label, label_len);
         }
     }
 
@@ -2106,7 +2106,7 @@ int wh_Server_CmacKdfKeyCacheImport(whServerContext* ctx,
     ret = wh_Server_KeystoreGetCacheSlotChecked(ctx, keyId, keySize, &cacheBuf,
                                                 &cacheMeta);
     if (ret == WH_ERROR_OK) {
-        memcpy(cacheBuf, keyData, keySize);
+        WH_MEMCPY(cacheBuf, keyData, keySize);
     }
 
     if (ret == WH_ERROR_OK) {
@@ -2117,7 +2117,7 @@ int wh_Server_CmacKdfKeyCacheImport(whServerContext* ctx,
         cacheMeta->access = WH_NVM_ACCESS_ANY;
 
         if ((label != NULL) && (label_len > 0)) {
-            memcpy(cacheMeta->label, label, label_len);
+            WH_MEMCPY(cacheMeta->label, label, label_len);
         }
     }
 
@@ -2258,7 +2258,7 @@ static int _HandleHkdf(whServerContext* ctx, uint16_t magic, int devId,
                 res.keyIdOut = wh_KeyId_TranslateToClient(key_id);
                 res.outSz = 0;
                 /* clear the output buffer */
-                memset(out, 0, outSz);
+                WH_MEMSET(out, 0, outSz);
             }
         }
     }
@@ -2289,7 +2289,7 @@ static int _HandleCmacKdf(whServerContext* ctx, uint16_t magic, int devId,
     whMessageCrypto_CmacKdfRequest  req;
     whMessageCrypto_CmacKdfResponse res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     /* Validate minimum size */
     if (inSize < sizeof(whMessageCrypto_CmacKdfRequest)) {
@@ -2420,7 +2420,7 @@ static int _HandleCmacKdf(whServerContext* ctx, uint16_t magic, int devId,
             if (ret == WH_ERROR_OK) {
                 res.keyIdOut = wh_KeyId_TranslateToClient(keyIdOut);
                 res.outSz    = 0;
-                memset(out, 0, outSz);
+                WH_MEMSET(out, 0, outSz);
             }
         }
     }
@@ -2650,7 +2650,7 @@ static int _HandleCurve25519SharedSecret(whServerContext* ctx, uint16_t magic,
         } /* WH_SERVER_NVM_LOCK() */
         /* Scrub the secret from the response buffer regardless of import
          * success/failure. */
-        memset(res_out, 0, res_len);
+        WH_MEMSET(res_out, 0, res_len);
         /* If the cached output id collides with an auto-imported input id,
          * suppress the matching eviction so cleanup does not delete the
          * just-cached secret. */
@@ -2862,7 +2862,7 @@ static int _HandleEd25519Sign(whServerContext* ctx, uint16_t magic, int devId,
         ret = WH_ERROR_ABORTED;
     }
     if (ret == 0) {
-        memcpy(res_sig, sig, sig_len);
+        WH_MEMCPY(res_sig, sig, sig_len);
     }
 
     if (evict) {
@@ -3008,7 +3008,7 @@ static int _HandleEd25519SignDma(whServerContext* ctx, uint16_t magic,
         WH_KEYTYPE_CRYPTO, ctx->comm->client_id, req.keyId);
     int evict = !!(req.options & WH_MESSAGE_CRYPTO_ED25519_SIGN_OPTIONS_EVICT);
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     sigLen = req.sig.sz;
     ret    = wh_Server_DmaProcessClientAddress(
@@ -3110,7 +3110,7 @@ static int _HandleEd25519VerifyDma(whServerContext* ctx, uint16_t magic,
     int evict =
         !!(req.options & WH_MESSAGE_CRYPTO_ED25519_VERIFY_OPTIONS_EVICT);
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     ret = wh_Server_DmaProcessClientAddress(
         ctx, (uintptr_t)req.sig.addr, &sigAddr, req.sig.sz,
@@ -3266,7 +3266,7 @@ static int _HandleAesCtr(whServerContext* ctx, uint16_t magic, int devId,
             else {
                 /* Restore streaming CTR context from the previous call. */
                 aes->left = left;
-                memcpy(aes->tmp, tmp, sizeof(aes->tmp));
+                WH_MEMCPY(aes->tmp, tmp, sizeof(aes->tmp));
                 if (enc != 0) {
                     ret = wc_AesCtrEncrypt(aes, (byte*)out, (byte*)in,
                                            (word32)len);
@@ -3287,8 +3287,8 @@ static int _HandleAesCtr(whServerContext* ctx, uint16_t magic, int devId,
             }
         }
         left = aes->left;
-        memcpy(out_reg, aes->reg, AES_BLOCK_SIZE);
-        memcpy(out_tmp, aes->tmp, sizeof(aes->tmp));
+        WH_MEMCPY(out_reg, aes->reg, AES_BLOCK_SIZE);
+        WH_MEMCPY(out_tmp, aes->tmp, sizeof(aes->tmp));
         wc_AesFree(aes);
     }
     /* encode the return sz */
@@ -3363,7 +3363,7 @@ static int _HandleAesCtrDma(whServerContext* ctx, uint16_t magic, int devId,
                        sizeof(whMessageCrypto_AesCtrDmaResponse);
     uint8_t* out_tmp = out_iv + AES_IV_SIZE;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     /* Handle key operations */
     if (ret == WH_ERROR_OK && keyLen > 0) {
@@ -3441,7 +3441,7 @@ static int _HandleAesCtrDma(whServerContext* ctx, uint16_t magic, int devId,
             else {
                 /* Restore streaming CTR context from the previous call. */
                 aes->left = left;
-                memcpy(aes->tmp, tmp, sizeof(aes->tmp));
+                WH_MEMCPY(aes->tmp, tmp, sizeof(aes->tmp));
                 if (enc != 0) {
                     ret = wc_AesCtrEncrypt(aes, (byte*)outAddr, (byte*)inAddr,
                                            (word32)len);
@@ -3462,8 +3462,8 @@ static int _HandleAesCtrDma(whServerContext* ctx, uint16_t magic, int devId,
                 if (ret == WH_ERROR_OK) {
                     left = aes->left;
                     outSz = len;
-                    memcpy(out_tmp, aes->tmp, AES_BLOCK_SIZE);
-                    memcpy(out_iv, aes->reg, AES_IV_SIZE);
+                    WH_MEMCPY(out_tmp, aes->tmp, AES_BLOCK_SIZE);
+                    WH_MEMCPY(out_iv, aes->reg, AES_IV_SIZE);
                 }
             }
         }
@@ -3666,7 +3666,7 @@ static int _HandleAesEcbDma(whServerContext* ctx, uint16_t magic, int devId,
     uint8_t* key = (uint8_t*)(cryptoDataIn) +
                    sizeof(whMessageCrypto_AesEcbDmaRequest);
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     /* Handle key operations */
     if (ret == WH_ERROR_OK && keyLen > 0) {
@@ -3893,7 +3893,7 @@ static int _HandleAesCbc(whServerContext* ctx, uint16_t magic, int devId,
             }
         }
         if (ret == WH_ERROR_OK) {
-            memcpy(out_iv, aes->reg, AES_IV_SIZE);
+            WH_MEMCPY(out_iv, aes->reg, AES_IV_SIZE);
         }
         wc_AesFree(aes);
     }
@@ -3962,7 +3962,7 @@ static int _HandleAesCbcDma(whServerContext* ctx, uint16_t magic, int devId,
     uint8_t* out_iv = (uint8_t*)(cryptoDataOut) +
                       sizeof(whMessageCrypto_AesCbcDmaResponse);
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     /* Handle key operations */
     if (ret == WH_ERROR_OK && keyLen > 0) {
@@ -4047,7 +4047,7 @@ static int _HandleAesCbcDma(whServerContext* ctx, uint16_t magic, int devId,
         }
         if (ret == WH_ERROR_OK) {
             outSz = len;
-            memcpy(out_iv, aes->reg, AES_IV_SIZE);
+            WH_MEMCPY(out_iv, aes->reg, AES_IV_SIZE);
         }
     }
 
@@ -4304,7 +4304,7 @@ static int _HandleAesGcmDma(whServerContext* ctx, uint16_t magic, int devId,
     uint8_t* out_tag = (uint8_t*)(cryptoDataOut) +
                        sizeof(whMessageCrypto_AesGcmDmaResponse);
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (ret == WH_ERROR_OK && keyLen > 0) {
         key = tag + (enc != 0 ? 0 : tagLen);
@@ -4460,7 +4460,7 @@ static int _CmacResolveKey(whServerContext* ctx, const uint8_t* requestKey,
 
     if (requestKeySz != 0) {
         /* Client provided the key directly in the request */
-        memcpy(outKey, requestKey, requestKeySz);
+        WH_MEMCPY(outKey, requestKey, requestKeySz);
         *outKeyLen = requestKeySz;
     }
     else if (!WH_KEYID_ISERASED(clientKeyId)) {
@@ -4540,7 +4540,7 @@ static int _HandleCmac(whServerContext* ctx, uint16_t magic, int devId,
     uint8_t* out =
         (uint8_t*)(cryptoDataOut) + sizeof(whMessageCrypto_CmacAesResponse);
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     uint8_t tmpKey[AES_256_KEY_SIZE];
     uint32_t tmpKeyLen = sizeof(tmpKey);
@@ -4671,7 +4671,7 @@ static int _HandleSha256(whServerContext* ctx, uint16_t magic, int devId,
 
     /* Restore intermediate state from client; server is stateless otherwise.
      * The partial-block buffer lives only on the client. */
-    memcpy(sha256->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
+    WH_MEMCPY(sha256->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
     sha256->loLen   = req.resumeState.loLen;
     sha256->hiLen   = req.resumeState.hiLen;
     sha256->buffLen = 0;
@@ -4691,7 +4691,7 @@ static int _HandleSha256(whServerContext* ctx, uint16_t magic, int devId,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(res.hash, sha256->digest, WC_SHA256_DIGEST_SIZE);
+                WH_MEMCPY(res.hash, sha256->digest, WC_SHA256_DIGEST_SIZE);
                 res.loLen = sha256->loLen;
                 res.hiLen = sha256->hiLen;
             }
@@ -4761,7 +4761,7 @@ static int _HandleSha224(whServerContext* ctx, uint16_t magic, int devId,
     /* sha224 is a part of sha256. It expects to have sha256 digest size of
      * intermediate hash data.
      */
-    memcpy(sha224->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
+    WH_MEMCPY(sha224->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
     sha224->loLen   = req.resumeState.loLen;
     sha224->hiLen   = req.resumeState.hiLen;
     sha224->buffLen = 0;
@@ -4782,7 +4782,7 @@ static int _HandleSha224(whServerContext* ctx, uint16_t magic, int devId,
             else {
                 /* return back the digest which has the same length of sha256
                  * for further operation */
-                memcpy(res.hash, sha224->digest, WC_SHA256_DIGEST_SIZE);
+                WH_MEMCPY(res.hash, sha224->digest, WC_SHA256_DIGEST_SIZE);
                 res.loLen = sha224->loLen;
                 res.hiLen = sha224->hiLen;
             }
@@ -4856,7 +4856,7 @@ static int _HandleSha384(whServerContext* ctx, uint16_t magic, int devId,
      * The partial-block buffer lives only on the client.
      * sha384 is a part of sha512. It expects to have sha512 digest
      * size of intermediate hash data. */
-    memcpy(sha384->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
+    WH_MEMCPY(sha384->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
     sha384->loLen   = req.resumeState.loLen;
     sha384->hiLen   = req.resumeState.hiLen;
     sha384->buffLen = 0;
@@ -4878,7 +4878,7 @@ static int _HandleSha384(whServerContext* ctx, uint16_t magic, int devId,
             else {
                 /* return back the digest which has the same length of sha512
                  * for further operation */
-                memcpy(res.hash, sha384->digest, WC_SHA512_DIGEST_SIZE);
+                WH_MEMCPY(res.hash, sha384->digest, WC_SHA512_DIGEST_SIZE);
                 res.loLen = sha384->loLen;
                 res.hiLen = sha384->hiLen;
             }
@@ -4968,7 +4968,7 @@ static int _HandleSha512(whServerContext* ctx, uint16_t magic, int devId,
 
     /* Restore intermediate state from client; server is stateless otherwise.
      * The partial-block buffer lives only on the client. */
-    memcpy(sha512->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
+    WH_MEMCPY(sha512->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
     sha512->loLen   = req.resumeState.loLen;
     sha512->hiLen   = req.resumeState.hiLen;
     sha512->buffLen = 0;
@@ -5002,7 +5002,7 @@ static int _HandleSha512(whServerContext* ctx, uint16_t magic, int devId,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(res.hash, sha512->digest, WC_SHA512_DIGEST_SIZE);
+                WH_MEMCPY(res.hash, sha512->digest, WC_SHA512_DIGEST_SIZE);
                 res.loLen = sha512->loLen;
                 res.hiLen = sha512->hiLen;
             }
@@ -5123,7 +5123,7 @@ static int _HandleSha3(whServerContext* ctx, int hashType, uint16_t magic,
     }
 
     /* Restore Keccak state from client. initFn already zeroed t[] and i. */
-    memcpy(sha3->s, req.resumeState.s, sizeof(sha3->s));
+    WH_MEMCPY(sha3->s, req.resumeState.s, sizeof(sha3->s));
 
     if (req.inSz > 0) {
         ret = ops.updateFn(sha3, inData, req.inSz);
@@ -5138,7 +5138,8 @@ static int _HandleSha3(whServerContext* ctx, int hashType, uint16_t magic,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(res.resumeState.s, sha3->s, sizeof(res.resumeState.s));
+                WH_MEMCPY(res.resumeState.s, sha3->s,
+                          sizeof(res.resumeState.s));
             }
         }
     }
@@ -6378,7 +6379,7 @@ static int _HandleSha256Dma(whServerContext* ctx, uint16_t magic, int devId,
     }
 
     /* Restore intermediate state from request */
-    memcpy(sha256->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
+    WH_MEMCPY(sha256->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
     sha256->loLen   = req.resumeState.loLen;
     sha256->hiLen   = req.resumeState.hiLen;
     sha256->buffLen = 0;
@@ -6418,7 +6419,7 @@ static int _HandleSha256Dma(whServerContext* ctx, uint16_t magic, int devId,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(res.hash, sha256->digest, WC_SHA256_DIGEST_SIZE);
+                WH_MEMCPY(res.hash, sha256->digest, WC_SHA256_DIGEST_SIZE);
                 res.loLen = sha256->loLen;
                 res.hiLen = sha256->hiLen;
             }
@@ -6484,7 +6485,7 @@ static int _HandleSha224Dma(whServerContext* ctx, uint16_t magic, int devId,
     }
 
     /* SHA224 shares SHA256's internal 32-byte digest state */
-    memcpy(sha224->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
+    WH_MEMCPY(sha224->digest, req.resumeState.hash, WC_SHA256_DIGEST_SIZE);
     sha224->loLen   = req.resumeState.loLen;
     sha224->hiLen   = req.resumeState.hiLen;
     sha224->buffLen = 0;
@@ -6522,7 +6523,7 @@ static int _HandleSha224Dma(whServerContext* ctx, uint16_t magic, int devId,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(res.hash, sha224->digest, WC_SHA256_DIGEST_SIZE);
+                WH_MEMCPY(res.hash, sha224->digest, WC_SHA256_DIGEST_SIZE);
                 res.loLen = sha224->loLen;
                 res.hiLen = sha224->hiLen;
             }
@@ -6588,7 +6589,7 @@ static int _HandleSha384Dma(whServerContext* ctx, uint16_t magic, int devId,
     }
 
     /* SHA384 shares SHA512's internal 64-byte digest state */
-    memcpy(sha384->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
+    WH_MEMCPY(sha384->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
     sha384->loLen   = req.resumeState.loLen;
     sha384->hiLen   = req.resumeState.hiLen;
     sha384->buffLen = 0;
@@ -6626,7 +6627,7 @@ static int _HandleSha384Dma(whServerContext* ctx, uint16_t magic, int devId,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(res.hash, sha384->digest, WC_SHA512_DIGEST_SIZE);
+                WH_MEMCPY(res.hash, sha384->digest, WC_SHA512_DIGEST_SIZE);
                 res.loLen = sha384->loLen;
                 res.hiLen = sha384->hiLen;
             }
@@ -6712,7 +6713,7 @@ static int _HandleSha512Dma(whServerContext* ctx, uint16_t magic, int devId,
 
     res.hashType = hashType;
 
-    memcpy(sha512->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
+    WH_MEMCPY(sha512->digest, req.resumeState.hash, WC_SHA512_DIGEST_SIZE);
     sha512->loLen    = req.resumeState.loLen;
     sha512->hiLen    = req.resumeState.hiLen;
     sha512->buffLen  = 0;
@@ -6764,7 +6765,7 @@ static int _HandleSha512Dma(whServerContext* ctx, uint16_t magic, int devId,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(res.hash, sha512->digest, WC_SHA512_DIGEST_SIZE);
+                WH_MEMCPY(res.hash, sha512->digest, WC_SHA512_DIGEST_SIZE);
                 res.loLen = sha512->loLen;
                 res.hiLen = sha512->hiLen;
             }
@@ -6831,7 +6832,7 @@ static int _HandleSha3Dma(whServerContext* ctx, int hashType, uint16_t magic,
     }
 
     /* Restore Keccak state from client. initFn already zeroed t[] and i. */
-    memcpy(sha3->s, req.resumeState.s, sizeof(sha3->s));
+    WH_MEMCPY(sha3->s, req.resumeState.s, sizeof(sha3->s));
 
     if (ret == 0 && req.inSz > 0) {
         ret = ops.updateFn(sha3, inlineData, req.inSz);
@@ -6864,7 +6865,8 @@ static int _HandleSha3Dma(whServerContext* ctx, int hashType, uint16_t magic,
                 ret = WH_ERROR_ABORTED;
             }
             else {
-                memcpy(res.resumeState.s, sha3->s, sizeof(res.resumeState.s));
+                WH_MEMCPY(res.resumeState.s, sha3->s,
+                          sizeof(res.resumeState.s));
             }
         }
     }
@@ -6902,7 +6904,7 @@ static int _HandleMlDsaKeyGenDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_MlDsaKeyGenDmaRequest req;
     whMessageCrypto_MlDsaKeyGenDmaResponse res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(whMessageCrypto_MlDsaKeyGenDmaRequest)) {
         return WH_ERROR_BADARGS;
@@ -7404,7 +7406,7 @@ static int _HandleMlKemKeyGenDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_MlKemKeyGenDmaRequest req;
     whMessageCrypto_MlKemKeyGenDmaResponse res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(whMessageCrypto_MlKemKeyGenDmaRequest)) {
         return WH_ERROR_BADARGS;
@@ -7547,7 +7549,7 @@ static int _HandleMlKemEncapsDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_MlKemEncapsDmaRequest req;
     whMessageCrypto_MlKemEncapsDmaResponse res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(whMessageCrypto_MlKemEncapsDmaRequest)) {
         return WH_ERROR_BADARGS;
@@ -7679,7 +7681,7 @@ static int _HandleMlKemDecapsDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_MlKemDecapsDmaRequest req;
     whMessageCrypto_MlKemDecapsDmaResponse res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(whMessageCrypto_MlKemDecapsDmaRequest)) {
         return WH_ERROR_BADARGS;
@@ -7831,7 +7833,7 @@ static int _StatefulSigFromSlot(whServerStatefulSigCtx* b,
     if ((b == NULL) || (server == NULL) || (slotBuf == NULL) || (meta == NULL)) {
         return WH_ERROR_BADARGS;
     }
-    memcpy(&hdr, slotBuf, sizeof(hdr));
+    WH_MEMCPY(&hdr, slotBuf, sizeof(hdr));
 
     b->server       = server;
     b->keyId        = keyId;
@@ -7881,7 +7883,7 @@ static int _LmsKeygenWriteCb(const byte* priv, word32 privSz, void* context)
         b->status = WH_ERROR_BUFFER_SIZE;
         return WC_LMS_RC_WRITE_FAIL;
     }
-    memcpy(b->slotBuf + b->privOff, priv, privSz);
+    WH_MEMCPY(b->slotBuf + b->privOff, priv, privSz);
     b->privLen = (uint16_t)privSz;
     b->status  = WH_ERROR_OK;
     return WC_LMS_RC_SAVED_TO_NV_MEMORY;
@@ -7916,7 +7918,7 @@ static int _HandleLmsKeyGenDma(whServerContext* ctx, uint16_t magic, int devId,
     whMessageCrypto_PqcStatefulSigKeyGenDmaRequest   req;
     whMessageCrypto_PqcStatefulSigKeyGenDmaResponse  res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(req)) {
         return WH_ERROR_BADARGS;
@@ -8018,7 +8020,7 @@ static int _HandleLmsKeyGenDma(whServerContext* ctx, uint16_t magic, int devId,
                            WH_NVM_FLAGS_NONEXPORTABLE;
         cacheMeta->access = WH_NVM_ACCESS_ANY;
         if (req.labelSize > 0) {
-            memcpy(cacheMeta->label, req.label, req.labelSize);
+            WH_MEMCPY(cacheMeta->label, req.label, req.labelSize);
         }
         ret = wh_Server_KeystoreCommitKey(ctx, keyId);
     }
@@ -8031,7 +8033,7 @@ static int _HandleLmsKeyGenDma(whServerContext* ctx, uint16_t magic, int devId,
     /* Key is committed. Stream the public key out via the pre-validated DMA
      * buffer; the copy cannot fail, so the client always receives its keyId. */
     if (ret == 0) {
-        memcpy(clientPubAddr, key->pub, pubLen32);
+        WH_MEMCPY(clientPubAddr, key->pub, pubLen32);
         res.keyId   = wh_KeyId_TranslateToClient(keyId);
         res.pubSize = pubLen32;
     }
@@ -8073,7 +8075,7 @@ static int _HandleLmsSignDma(whServerContext* ctx, uint16_t magic, int devId,
     whMessageCrypto_PqcStatefulSigSignDmaRequest   req;
     whMessageCrypto_PqcStatefulSigSignDmaResponse  res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(req)) {
         return WH_ERROR_BADARGS;
@@ -8200,7 +8202,7 @@ static int _HandleLmsVerifyDma(whServerContext* ctx, uint16_t magic, int devId,
     whMessageCrypto_PqcStatefulSigVerifyDmaRequest   req;
     whMessageCrypto_PqcStatefulSigVerifyDmaResponse  res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(req)) {
         return WH_ERROR_BADARGS;
@@ -8306,7 +8308,7 @@ static int _HandleLmsSigsLeftDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_PqcStatefulSigSigsLeftDmaRequest   req;
     whMessageCrypto_PqcStatefulSigSigsLeftDmaResponse  res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(req)) {
         return WH_ERROR_BADARGS;
@@ -8372,7 +8374,7 @@ static enum wc_XmssRc _XmssKeygenWriteCb(const byte* priv, word32 privSz,
         b->status = WH_ERROR_BUFFER_SIZE;
         return WC_XMSS_RC_WRITE_FAIL;
     }
-    memcpy(b->slotBuf + b->privOff, priv, privSz);
+    WH_MEMCPY(b->slotBuf + b->privOff, priv, privSz);
     b->privLen = (uint16_t)privSz;
     b->status  = WH_ERROR_OK;
     return WC_XMSS_RC_SAVED_TO_NV_MEMORY;
@@ -8409,8 +8411,8 @@ static int _HandleXmssKeyGenDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_PqcStatefulSigKeyGenDmaRequest   req;
     whMessageCrypto_PqcStatefulSigKeyGenDmaResponse  res;
 
-    memset(&res, 0, sizeof(res));
-    memset(&sigCtx, 0, sizeof(sigCtx));
+    WH_MEMSET(&res, 0, sizeof(res));
+    WH_MEMSET(&sigCtx, 0, sizeof(sigCtx));
 
     if (inSize < sizeof(req)) {
         return WH_ERROR_BADARGS;
@@ -8523,7 +8525,7 @@ static int _HandleXmssKeyGenDma(whServerContext* ctx, uint16_t magic,
                            WH_NVM_FLAGS_NONEXPORTABLE;
         cacheMeta->access = WH_NVM_ACCESS_ANY;
         if (req.labelSize > 0) {
-            memcpy(cacheMeta->label, req.label, req.labelSize);
+            WH_MEMCPY(cacheMeta->label, req.label, req.labelSize);
         }
         ret = wh_Server_KeystoreCommitKey(ctx, keyId);
     }
@@ -8536,7 +8538,7 @@ static int _HandleXmssKeyGenDma(whServerContext* ctx, uint16_t magic,
     /* Key is committed. Stream the public key out via the pre-validated DMA
      * buffer; the copy cannot fail, so the client always receives its keyId. */
     if (ret == 0) {
-        memcpy(clientPubAddr, key->pk, pubLen32);
+        WH_MEMCPY(clientPubAddr, key->pk, pubLen32);
         res.keyId   = wh_KeyId_TranslateToClient(keyId);
         res.pubSize = pubLen32;
     }
@@ -8578,7 +8580,7 @@ static int _HandleXmssSignDma(whServerContext* ctx, uint16_t magic, int devId,
     whMessageCrypto_PqcStatefulSigSignDmaRequest   req;
     whMessageCrypto_PqcStatefulSigSignDmaResponse  res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(req)) {
         return WH_ERROR_BADARGS;
@@ -8692,7 +8694,7 @@ static int _HandleXmssVerifyDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_PqcStatefulSigVerifyDmaRequest   req;
     whMessageCrypto_PqcStatefulSigVerifyDmaResponse  res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(req)) {
         return WH_ERROR_BADARGS;
@@ -8798,7 +8800,7 @@ static int _HandleXmssSigsLeftDma(whServerContext* ctx, uint16_t magic,
     whMessageCrypto_PqcStatefulSigSigsLeftDmaRequest   req;
     whMessageCrypto_PqcStatefulSigSigsLeftDmaResponse  res;
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     if (inSize < sizeof(req)) {
         return WH_ERROR_BADARGS;
@@ -8988,7 +8990,7 @@ static int _HandleCmacDma(whServerContext* ctx, uint16_t magic, int devId,
     uint8_t* out =
         (uint8_t*)(cryptoDataOut) + sizeof(whMessageCrypto_CmacAesDmaResponse);
 
-    memset(&res, 0, sizeof(res));
+    WH_MEMSET(&res, 0, sizeof(res));
 
     /* DMA translated address for input */
     void* inAddr = NULL;

@@ -323,7 +323,7 @@ static int _FindInKeyCache(whKeyCacheContext* ctx, whKeyId keyId,
 static int _EvictSlot(uint8_t* buf, whNvmMetadata* meta)
 {
     meta->id = WH_KEYID_ERASED;
-    memset(buf, 0, meta->len);
+    WH_MEMSET(buf, 0, meta->len);
     return WH_ERROR_OK;
 }
 
@@ -369,7 +369,7 @@ static int _GetKeyCacheSlot(whKeyCacheContext* ctx, uint16_t keySz,
 
         /* Zero slot and capture pointers */
         if (foundIndex >= 0) {
-            memset(&ctx->cache[foundIndex], 0, sizeof(whCacheSlot));
+            WH_MEMSET(&ctx->cache[foundIndex], 0, sizeof(whCacheSlot));
             slotBuf  = ctx->cache[foundIndex].buffer;
             slotMeta = ctx->cache[foundIndex].meta;
         }
@@ -399,7 +399,7 @@ static int _GetKeyCacheSlot(whKeyCacheContext* ctx, uint16_t keySz,
 
         /* Zero slot and capture pointers */
         if (foundIndex >= 0) {
-            memset(&ctx->bigCache[foundIndex], 0, sizeof(whBigCacheSlot));
+            WH_MEMSET(&ctx->bigCache[foundIndex], 0, sizeof(whBigCacheSlot));
             slotBuf  = ctx->bigCache[foundIndex].buffer;
             slotMeta = ctx->bigCache[foundIndex].meta;
         }
@@ -673,7 +673,7 @@ static int _ExportLmsPublicKey(whServerContext* server, whKeyId keyId,
                 ret = WH_ERROR_NOSPACE;
             }
             else {
-                memcpy(out, key->pub, pubLen);
+                WH_MEMCPY(out, key->pub, pubLen);
                 *outSz = (uint16_t)pubLen;
             }
         }
@@ -703,7 +703,7 @@ static int _ExportXmssPublicKey(whServerContext* server, whKeyId keyId,
                 ret = WH_ERROR_NOSPACE;
             }
             else {
-                memcpy(out, key->pk, pubLen);
+                WH_MEMCPY(out, key->pk, pubLen);
                 *outSz = (uint16_t)pubLen;
             }
         }
@@ -877,8 +877,8 @@ static int _KeystoreCacheKey(whServerContext* server, whNvmMetadata* meta,
         return ret;
     }
 
-    memcpy(slotBuf, in, meta->len);
-    memcpy((uint8_t*)slotMeta, (uint8_t*)meta, sizeof(whNvmMetadata));
+    WH_MEMCPY(slotBuf, in, meta->len);
+    WH_MEMCPY((uint8_t*)slotMeta, (uint8_t*)meta, sizeof(whNvmMetadata));
     _MarkKeyCommitted(_GetCacheContext(server, meta->id), meta->id, 0);
 
     WH_DEBUG_SERVER_VERBOSE("hsmCacheKey: cached keyid=0x%X, len=%u\n",
@@ -926,7 +926,7 @@ static int _KeystoreCacheRandomKey(whServerContext* server, whNvmMetadata* meta)
         return ret;
     }
 
-    memcpy((uint8_t*)slotMeta, (uint8_t*)meta, sizeof(whNvmMetadata));
+    WH_MEMCPY((uint8_t*)slotMeta, (uint8_t*)meta, sizeof(whNvmMetadata));
     _MarkKeyCommitted(_GetCacheContext(server, meta->id), meta->id, 0);
 
     WH_DEBUG_SERVER_VERBOSE("hsmGenerateKey: cached keyid=0x%X, len=%u\n",
@@ -1031,8 +1031,8 @@ int wh_Server_KeystoreFreshenKey(whServerContext* server, whKeyId keyId,
             if (ret == WH_ERROR_OK) {
                 /* Copy the metadata to the cache slot if key read is
                  * successful*/
-                memcpy((uint8_t*)*cacheMetaOut, (uint8_t*)tmpMeta,
-                       sizeof(whNvmMetadata));
+                WH_MEMCPY((uint8_t*)*cacheMetaOut, (uint8_t*)tmpMeta,
+                          sizeof(whNvmMetadata));
                 _MarkKeyCommitted(_GetCacheContext(server, keyId), keyId, 1);
             }
         }
@@ -1070,11 +1070,11 @@ int wh_Server_KeystoreReadKey(whServerContext* server, whKeyId keyId,
         if (cacheMeta->len > *outSz)
             return WH_ERROR_NOSPACE;
         if (outMeta != NULL) {
-            memcpy((uint8_t*)outMeta, (uint8_t*)cacheMeta,
-                   sizeof(whNvmMetadata));
+            WH_MEMCPY((uint8_t*)outMeta, (uint8_t*)cacheMeta,
+                      sizeof(whNvmMetadata));
         }
         if (out != NULL) {
-            memcpy(out, cacheBuffer, cacheMeta->len);
+            WH_MEMCPY(out, cacheBuffer, cacheMeta->len);
         }
         *outSz = cacheMeta->len;
         return 0;
@@ -1102,7 +1102,7 @@ int wh_Server_KeystoreReadKey(whServerContext* server, whKeyId keyId,
         *outSz = meta->len;
         /* read meta */
         if (outMeta != NULL)
-            memcpy((uint8_t*)outMeta, (uint8_t*)meta, sizeof(*outMeta));
+            WH_MEMCPY((uint8_t*)outMeta, (uint8_t*)meta, sizeof(*outMeta));
         /* read the object */
         if (out != NULL)
             ret = wh_Nvm_Read(server->nvm, keyId, 0, *outSz, out);
@@ -1128,11 +1128,11 @@ int wh_Server_KeystoreReadKey(whServerContext* server, whKeyId keyId,
         (WH_KEYID_TYPE(keyId) == WH_KEYTYPE_SHE) &&
         (WH_KEYID_ID(keyId) == WH_SHE_MASTER_ECU_KEY_ID)) {
         if (out != NULL)
-            memset(out, 0, WH_SHE_KEY_SZ);
+            WH_MEMSET(out, 0, WH_SHE_KEY_SZ);
         *outSz = WH_SHE_KEY_SZ;
         if (outMeta != NULL) {
             /* need empty flags and correct length and id */
-            memset(outMeta, 0, sizeof(*outMeta));
+            WH_MEMSET(outMeta, 0, sizeof(*outMeta));
             outMeta->len = WH_SHE_KEY_SZ;
             outMeta->id  = keyId;
         }
@@ -1178,8 +1178,8 @@ int wh_Server_KeystoreReadKeyEnforce(whServerContext* server, whKeyId keyId,
             ret = wh_Server_KeystoreEnforceKeyUsage(meta, requiredUsage);
             if (ret == WH_ERROR_OK) {
                 if (outMeta != NULL) {
-                    memcpy((uint8_t*)outMeta, (uint8_t*)meta,
-                           sizeof(whNvmMetadata));
+                    WH_MEMCPY((uint8_t*)outMeta, (uint8_t*)meta,
+                              sizeof(whNvmMetadata));
                 }
             }
             else if (out != NULL) {
@@ -1552,8 +1552,8 @@ static int _AesGcmKeyWrapWithKek(whServerContext* server,
     }
 
     /* Combine key and metadata into one blob */
-    memcpy(plainBlob, metadataIn, sizeof(*metadataIn));
-    memcpy(plainBlob + sizeof(*metadataIn), keyIn, keySz);
+    WH_MEMCPY(plainBlob, metadataIn, sizeof(*metadataIn));
+    WH_MEMCPY(plainBlob + sizeof(*metadataIn), keyIn, keySz);
 
     /* Place the encrypted blob after the IV and Auth Tag */
     encBlob = (uint8_t*)wrappedKeyOut + sizeof(iv) + sizeof(authTag);
@@ -1564,8 +1564,8 @@ static int _AesGcmKeyWrapWithKek(whServerContext* server,
                            WH_KEYWRAP_AAD_KEY_LEN);
     if (ret == 0) {
         /* Prepend IV + authTag to encrypted blob */
-        memcpy(wrappedKeyOut, iv, sizeof(iv));
-        memcpy(wrappedKeyOut + sizeof(iv), authTag, sizeof(authTag));
+        WH_MEMCPY(wrappedKeyOut, iv, sizeof(iv));
+        WH_MEMCPY(wrappedKeyOut + sizeof(iv), authTag, sizeof(authTag));
     }
 
     wc_AesFree(aes);
@@ -1645,8 +1645,9 @@ static int _AesGcmKeyUnwrapWithKek(whServerContext* server,
     }
 
     /* Extract IV and authTag from wrappedKeyIn */
-    memcpy(iv, wrappedKeyIn, sizeof(iv));
-    memcpy(authTag, (const uint8_t*)wrappedKeyIn + sizeof(iv), sizeof(authTag));
+    WH_MEMCPY(iv, wrappedKeyIn, sizeof(iv));
+    WH_MEMCPY(authTag, (const uint8_t*)wrappedKeyIn + sizeof(iv),
+              sizeof(authTag));
 
     /* Decrypt under the key-wrap domain; a data blob won't authenticate here */
     ret = wc_AesGcmDecrypt(aes, plainBlob, encBlob, encBlobSz, iv, sizeof(iv),
@@ -1654,8 +1655,8 @@ static int _AesGcmKeyUnwrapWithKek(whServerContext* server,
                            WH_KEYWRAP_AAD_KEY_LEN);
     if (ret == 0) {
         /* Extract metadata and key from the decrypted blob */
-        memcpy(metadataOut, plainBlob, sizeof(*metadataOut));
-        memcpy(keyOut, plainBlob + sizeof(*metadataOut), keySz);
+        WH_MEMCPY(metadataOut, plainBlob, sizeof(*metadataOut));
+        WH_MEMCPY(keyOut, plainBlob + sizeof(*metadataOut), keySz);
     }
 
     wc_AesFree(aes);
@@ -1745,8 +1746,8 @@ static int _AesGcmDataWrapWithKek(whServerContext* server,
                            WH_KEYWRAP_AAD_DATA_LEN);
     if (ret == 0) {
         /* Prepend IV + authTag to encrypted blob */
-        memcpy(wrappedDataOut, iv, sizeof(iv));
-        memcpy(wrappedDataOut + sizeof(iv), authTag, sizeof(authTag));
+        WH_MEMCPY(wrappedDataOut, iv, sizeof(iv));
+        WH_MEMCPY(wrappedDataOut + sizeof(iv), authTag, sizeof(authTag));
     }
 
     wc_AesFree(aes);
@@ -1825,8 +1826,9 @@ static int _AesGcmDataUnwrapWithKek(whServerContext* server,
     }
 
     /* Extract IV and authTag from wrappedDataIn */
-    memcpy(iv, wrappedDataIn, sizeof(iv));
-    memcpy(authTag, (const uint8_t*)wrappedDataIn + sizeof(iv), sizeof(authTag));
+    WH_MEMCPY(iv, wrappedDataIn, sizeof(iv));
+    WH_MEMCPY(authTag, (const uint8_t*)wrappedDataIn + sizeof(iv),
+              sizeof(authTag));
 
     /* Decrypt under the data-wrap domain; a key blob won't authenticate here */
     ret = wc_AesGcmDecrypt(aes, dataOut, encBlob, encBlobSz, iv, sizeof(iv),
@@ -1901,7 +1903,7 @@ static int _HandleKeyWrapRequest(whServerContext*                  server,
 
     /* Extract the metadata and key. The metadata trailer arrives in the
      * client's byte order, so translate before any field is used */
-    memcpy(&metadata, reqData, sizeof(metadata));
+    WH_MEMCPY(&metadata, reqData, sizeof(metadata));
     ret = wh_MessageNvm_TranslateMetadata(magic, &metadata, &metadata);
     if (ret != WH_ERROR_OK) {
         return ret;
@@ -1945,7 +1947,7 @@ static int _HandleKeyWrapRequest(whServerContext*                  server,
             }
 
             /* Copy the wrapped key on to the response data buffer */
-            memcpy(respData, wrappedKeyStage, wrappedKeySz);
+            WH_MEMCPY(respData, wrappedKeyStage, wrappedKeySz);
             wh_Utils_ForceZero(wrappedKeyStage, sizeof(wrappedKeyStage));
 
             /* Tell the client how big the wrapped key is */
@@ -2077,7 +2079,7 @@ _HandleKeyWrapExportRequest(whServerContext*                        server,
             }
 
             /* Copy the wrapped key on to the response data buffer */
-            memcpy(respData, wrappedKeyStage, wrappedKeySz);
+            WH_MEMCPY(respData, wrappedKeyStage, wrappedKeySz);
             wh_Utils_ForceZero(wrappedKeyStage, sizeof(wrappedKeyStage));
 
             /* Tell the client how big the wrapped key is */
@@ -2237,8 +2239,8 @@ static int _HandleKeyUnwrapAndExportRequest(
 
     if (ret == WH_ERROR_OK) {
         /* Copy the metadata and key on to the response data buffer */
-        memcpy(respData, &metadata, sizeof(metadata));
-        memcpy(respData + sizeof(metadata), keyStage, keySz);
+        WH_MEMCPY(respData, &metadata, sizeof(metadata));
+        WH_MEMCPY(respData + sizeof(metadata), keyStage, keySz);
 
         /* Tell the client how big the key is */
         resp->keySz = keySz;
@@ -2510,7 +2512,7 @@ static int _HandleDataWrapRequest(whServerContext*                   server,
                                   wrappedDataStage, wrappedDataSz);
             if (ret == WH_ERROR_OK) {
                 /* Copy the wrapped data on to the response data buffer */
-                memcpy(respData, wrappedDataStage, wrappedDataSz);
+                WH_MEMCPY(respData, wrappedDataStage, wrappedDataSz);
 
                 /* Tell the client how big the wrapped data is */
                 resp->wrappedDataSz = wrappedDataSz;
@@ -2592,7 +2594,7 @@ static int _HandleDataUnwrapRequest(whServerContext*                     server,
                                     req->wrappedDataSz, dataStage, dataSz);
             if (ret == WH_ERROR_OK) {
                 /* Copy the unwrapped data to the response data buffer */
-                memcpy(respData, dataStage, dataSz);
+                WH_MEMCPY(respData, dataStage, dataSz);
 
                 /* Tell the client how big the unwrapped data is */
                 resp->dataSz     = dataSz;
@@ -2669,7 +2671,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
                 if (req.labelSz > WH_NVM_LABEL_LEN) {
                     req.labelSz = WH_NVM_LABEL_LEN;
                 }
-                memcpy(meta->label, req.label, req.labelSz);
+                WH_MEMCPY(meta->label, req.label, req.labelSz);
             }
 
             if (ret == WH_ERROR_OK) {
@@ -2729,7 +2731,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
                 if (req.labelSz > WH_NVM_LABEL_LEN) {
                     req.labelSz = WH_NVM_LABEL_LEN;
                 }
-                memcpy(meta->label, req.label, req.labelSz);
+                WH_MEMCPY(meta->label, req.label, req.labelSz);
             }
 
 #ifndef WC_NO_RNG
@@ -2794,7 +2796,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
                 if (req.labelSz > WH_NVM_LABEL_LEN) {
                     req.labelSz = WH_NVM_LABEL_LEN;
                 }
-                memcpy(meta->label, req.label, req.labelSz);
+                WH_MEMCPY(meta->label, req.label, req.labelSz);
             }
 
             if (ret == WH_ERROR_OK) {
@@ -2868,7 +2870,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
 
                     if (ret == WH_ERROR_OK) {
                         resp.len = meta->len;
-                        memcpy(resp.label, meta->label, sizeof(meta->label));
+                        WH_MEMCPY(resp.label, meta->label, sizeof(meta->label));
                     }
 
                     (void)WH_SERVER_NVM_UNLOCK(server);
@@ -2996,7 +2998,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
                 }
 
                 if (ret == WH_ERROR_OK && cacheMeta != NULL) {
-                    memcpy(resp.label, cacheMeta->label, WH_NVM_LABEL_LEN);
+                    WH_MEMCPY(resp.label, cacheMeta->label, WH_NVM_LABEL_LEN);
                 }
 
                 (void)WH_SERVER_NVM_UNLOCK(server);
@@ -3081,7 +3083,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
                     /* Only provide key output if no error */
                     if (ret == WH_ERROR_OK) {
                         resp.len = keySz;
-                        memcpy(resp.label, meta->label, sizeof(meta->label));
+                        WH_MEMCPY(resp.label, meta->label, sizeof(meta->label));
                     }
 
                     (void)WH_SERVER_NVM_UNLOCK(server);
@@ -3199,7 +3201,7 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
                  * observe partial metadata for a key whose public DER could
                  * not be produced. */
                 if (ret == WH_ERROR_OK && cacheMeta != NULL) {
-                    memcpy(resp.label, cacheMeta->label, WH_NVM_LABEL_LEN);
+                    WH_MEMCPY(resp.label, cacheMeta->label, WH_NVM_LABEL_LEN);
                 }
 
                 (void)WH_SERVER_NVM_UNLOCK(server);
@@ -3668,7 +3670,7 @@ int _KeystoreCacheKeyDma(whServerContext* server, whNvmMetadata* meta,
     }
 
     /* Copy metadata */
-    memcpy(slotMeta, meta, sizeof(whNvmMetadata));
+    WH_MEMCPY(slotMeta, meta, sizeof(whNvmMetadata));
 
     /* Copy key data using DMA */
     ret = whServerDma_CopyFromClient(server, buffer, keyAddr, meta->len,
@@ -3682,7 +3684,7 @@ int _KeystoreCacheKeyDma(whServerContext* server, whNvmMetadata* meta,
 #endif
     if (ret != 0) {
         /* Clear the slot on error */
-        memset(buffer, 0, meta->len);
+        WH_MEMSET(buffer, 0, meta->len);
         slotMeta->id = WH_KEYID_ERASED;
     }
     else {
@@ -3721,7 +3723,7 @@ int wh_Server_KeystoreExportKeyDma(whServerContext* server, whKeyId keyId,
         return WH_ERROR_NOSPACE;
     }
 
-    memcpy(outMeta, cacheMeta, sizeof(whNvmMetadata));
+    WH_MEMCPY(outMeta, cacheMeta, sizeof(whNvmMetadata));
 
     /* Copy key data using DMA */
     ret = whServerDma_CopyToClient(server, keyAddr, buffer, outMeta->len,

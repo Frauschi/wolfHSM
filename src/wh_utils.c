@@ -174,19 +174,19 @@ void* wh_Utils_CacheFlush(void* p, size_t n)
 
 void* wh_Utils_memset_flush(void* p, int c, size_t n)
 {
-    memset(p, c, n);
+    WH_MEMSET(p, c, n);
     XMEMFENCE();
     return XCACHEFLUSHBLK(p, n);
 }
 
 void* wh_Utils_memcpy_invalidate(void* dst, const void* src, size_t n)
 {
-    return memcpy(dst, XCACHEINVLDBLK(src, n), n);
+    return WH_MEMCPY(dst, XCACHEINVLDBLK(src, n), n);
 }
 
 void* wh_Utils_memcpy_flush(void* dst, const void* src , size_t n)
 {
-    memcpy(dst,src,n);
+    WH_MEMCPY(dst,src,n);
     XMEMFENCE();
     return XCACHEFLUSHBLK(dst, n);
 }

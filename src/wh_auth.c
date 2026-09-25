@@ -62,7 +62,7 @@ int wh_Auth_Init(whAuthContext* context, const whAuthConfig* config)
 
     context->cb      = config->cb;
     context->context = config->context;
-    memset(&context->user, 0, sizeof(whAuthUser));
+    WH_MEMSET(&context->user, 0, sizeof(whAuthUser));
 
 #ifdef WOLFHSM_CFG_THREADSAFE
     /* Initialize the lock for thread-safe auth operations */
@@ -174,7 +174,7 @@ int wh_Auth_Logout(whAuthContext* context, whUserId user_id)
         if (rc == WH_ERROR_OK) {
             /* Clear local session only when logging out the current user */
             if (user_id == context->user.user_id) {
-                memset(&context->user, 0, sizeof(whAuthUser));
+                WH_MEMSET(&context->user, 0, sizeof(whAuthUser));
             }
         }
 
@@ -196,7 +196,7 @@ int wh_Auth_Reset(whAuthContext* context)
 
     rc = WH_AUTH_LOCK(context);
     if (rc == WH_ERROR_OK) {
-        memset(&context->user, 0, sizeof(whAuthUser));
+        WH_MEMSET(&context->user, 0, sizeof(whAuthUser));
         (void)WH_AUTH_UNLOCK(context);
     } /* LOCK() */
     return rc;

@@ -205,6 +205,11 @@
  *                                   for at least n bytes
  *      DefaultL wh_Utils_CacheInvalidate(ptr, n)
  *
+ *  WH_MEMCPY(dst, src, n), WH_MEMSET(dst, c, n), WH_MEMCMP(a, b, n),
+ *  WH_MEMMOVE(dst, src, n) - Memory functions used by the library, for ports
+ *      that provide faster implementations than the toolchain's
+ *      Default: memcpy, memset, memcmp, memmove
+ *
  *
  *
  *
@@ -657,6 +662,25 @@
 /* Invalidate the cache lines starting  at _p for at least _n bytes. */
 #ifndef XCACHEINVLDBLK
 #define XCACHEINVLDBLK(_p, _n) wh_Utils_CacheInvalidate((_p), (_n))
+#endif
+
+/** Standard memory functions */
+#include <string.h>
+
+#ifndef WH_MEMCPY
+#define WH_MEMCPY(_d, _s, _n) memcpy((_d), (_s), (_n))
+#endif
+
+#ifndef WH_MEMSET
+#define WH_MEMSET(_d, _c, _n) memset((_d), (_c), (_n))
+#endif
+
+#ifndef WH_MEMCMP
+#define WH_MEMCMP(_a, _b, _n) memcmp((_a), (_b), (_n))
+#endif
+
+#ifndef WH_MEMMOVE
+#define WH_MEMMOVE(_d, _s, _n) memmove((_d), (_s), (_n))
 #endif
 
 /* DMA Configuration */

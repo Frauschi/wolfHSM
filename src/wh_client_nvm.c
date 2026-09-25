@@ -285,10 +285,10 @@ int wh_Client_NvmAddObjectRequest(whClientContext* c,
     msg->flags = flags;
     msg->len = len;
     if(label_len > 0) {
-        memcpy(msg->label, label, label_len);
+        WH_MEMCPY(msg->label, label, label_len);
     }
     if(len > 0) {
-        memcpy(payload, data, len);
+        WH_MEMCPY(payload, data, len);
     }
 
     return wh_Client_SendRequest(c,
@@ -492,7 +492,7 @@ int wh_Client_NvmGetMetadataResponse(whClientContext* c, int32_t *out_rc,
                 if (label_len > sizeof(msg.label)) {
                     label_len = sizeof(msg.label);
                 }
-                memcpy(label, msg.label, label_len);
+                WH_MEMCPY(label, msg.label, label_len);
             }
         }
     }
@@ -653,7 +653,7 @@ int wh_Client_NvmReadResponse(whClientContext* c, int32_t *out_rc,
                 *out_len = resp_size - hdr_len;
             }
             if (data != NULL) {
-                memcpy(data, payload, resp_size - hdr_len);
+                WH_MEMCPY(data, payload, resp_size - hdr_len);
             }
         }
     }
@@ -703,7 +703,7 @@ int wh_Client_NvmAddObjectDmaRequest(whClientContext* c,
     /* One op in flight: clear both slots up front so a metadata-only object -
      * or a failed metadata PRE that skips the data PRE - leaves the data slot's
      * POST a no-op and never acts on a stale (shared-union) size. */
-    memset(&c->dma.asyncCtx.nvmAdd, 0, sizeof(c->dma.asyncCtx.nvmAdd));
+    WH_MEMSET(&c->dma.asyncCtx.nvmAdd, 0, sizeof(c->dma.asyncCtx.nvmAdd));
 
     /* PRE-translate the metadata struct (fixed size) and the optional data
      * buffer; the matching Response POST releases them. */

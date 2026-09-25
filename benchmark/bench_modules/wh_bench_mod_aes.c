@@ -87,8 +87,8 @@ static int _benchAesCtrDma(whClientContext* client, whBenchOpContext* ctx,
 
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
     /* Initialize the buffers with something non-zero */
-    memset((uint8_t*)in, 0xAA, inLen);
-    memset(out, 0xAA, inLen);
+    WH_MEMSET((uint8_t*)in, 0xAA, inLen);
+    WH_MEMSET(out, 0xAA, inLen);
 #endif
 
     /* Initialize the aes struct */
@@ -192,8 +192,8 @@ static int _benchAesCtr(whClientContext* client, whBenchOpContext* ctx, int id,
 
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
     /* Initialize the input buffer with something non-zero */
-    memset(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
-    memset(WH_BENCH_DATA_OUT_BUFFER, 0xAA, inLen);
+    WH_MEMSET(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
+    WH_MEMSET(WH_BENCH_DATA_OUT_BUFFER, 0xAA, inLen);
 #endif
 
     /* Initialize the aes struct */
@@ -415,8 +415,8 @@ static int _benchAesEcbDma(whClientContext* client, whBenchOpContext* ctx,
 
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
     /* Initialize the input buffer with something non-zero */
-    memset((uint8_t*)in, 0xAA, inLen);
-    memset(out, 0xAA, inLen);
+    WH_MEMSET((uint8_t*)in, 0xAA, inLen);
+    WH_MEMSET(out, 0xAA, inLen);
 #endif
 
     /* Initialize the aes struct */
@@ -523,8 +523,8 @@ static int _benchAesEcb(whClientContext* client, whBenchOpContext* ctx, int id,
 
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
     /* Initialize the input buffer with something non-zero */
-    memset(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
-    memset(WH_BENCH_DATA_OUT_BUFFER, 0xAA, inLen);
+    WH_MEMSET(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
+    WH_MEMSET(WH_BENCH_DATA_OUT_BUFFER, 0xAA, inLen);
 #endif
 
     /* Initialize the aes struct */
@@ -754,8 +754,8 @@ static int _benchAesCbcDma(whClientContext* client, whBenchOpContext* ctx,
 
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
     /* Initialize the input buffer with something non-zero */
-    memset((uint8_t*)in, 0xAA, inLen);
-    memset(out, 0xAA, inLen);
+    WH_MEMSET((uint8_t*)in, 0xAA, inLen);
+    WH_MEMSET(out, 0xAA, inLen);
 #endif
 
     /* Initialize the aes struct */
@@ -871,8 +871,8 @@ static int _benchAesCbc(whClientContext* client, whBenchOpContext* ctx, int id,
 
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
     /* Initialize the input buffer with something non-zero */
-    memset(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
-    memset(WH_BENCH_DATA_OUT_BUFFER, 0xAA, inLen);
+    WH_MEMSET(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
+    WH_MEMSET(WH_BENCH_DATA_OUT_BUFFER, 0xAA, inLen);
 #endif
 
     /* Initialize the aes struct */
@@ -1114,8 +1114,8 @@ static int _benchAesGcmDma(whClientContext* client, whBenchOpContext* ctx,
 
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
     /* Initialize the buffers with something non-zero */
-    memset((uint8_t*)in, 0xAA, inLen);
-    memset(out, 0xAA, inLen);
+    WH_MEMSET((uint8_t*)in, 0xAA, inLen);
+    WH_MEMSET(out, 0xAA, inLen);
 #endif
 
     /* initialize the aes struct */
@@ -1248,8 +1248,8 @@ static int _benchAesGcm(whClientContext* client, whBenchOpContext* ctx, int id,
 
 #if defined(WOLFHSM_CFG_BENCH_INIT_DATA_BUFFERS)
     /* Initialize the input buffer with something non-zero */
-    memset(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
-    memset(WH_BENCH_DATA_OUT_BUFFER, 0xAA, inLen);
+    WH_MEMSET(WH_BENCH_DATA_IN_BUFFER, 0xAA, inLen);
+    WH_MEMSET(WH_BENCH_DATA_OUT_BUFFER, 0xAA, inLen);
 #endif
 
     /* initialize the aes struct */

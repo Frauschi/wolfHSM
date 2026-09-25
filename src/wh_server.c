@@ -83,7 +83,7 @@ int wh_Server_Init(whServerContext* server, whServerConfig* config)
         return WH_ERROR_BADARGS;
     }
 
-    memset(server, 0, sizeof(*server));
+    WH_MEMSET(server, 0, sizeof(*server));
     server->nvm = config->nvm;
 
 #ifndef WOLFHSM_CFG_NO_CRYPTO
@@ -205,7 +205,7 @@ int wh_Server_Cleanup(whServerContext* server)
     (void)wh_Log_Cleanup(&server->log);
 #endif /* WOLFHSM_CFG_LOGGING */
 
-    memset(server, 0, sizeof(*server));
+    WH_MEMSET(server, 0, sizeof(*server));
 
     return WH_ERROR_OK;
 }
@@ -321,8 +321,8 @@ static int _wh_Server_HandleCommRequest(whServerContext* server,
         whMessageCommInfoResponse resp = {0};
 
         /* Process the info action */
-        memcpy(resp.version, version, sizeof(resp.version));
-        memcpy(resp.build, build, sizeof(resp.build));
+        WH_MEMCPY(resp.version, version, sizeof(resp.version));
+        WH_MEMCPY(resp.build, build, sizeof(resp.build));
         resp.cfg_comm_data_len = WOLFHSM_CFG_COMM_DATA_LEN;
         resp.cfg_nvm_object_count = WOLFHSM_CFG_NVM_OBJECT_COUNT;
         resp.cfg_server_customcb_count = WOLFHSM_CFG_SERVER_CUSTOMCB_COUNT;
@@ -363,7 +363,7 @@ static int _wh_Server_HandleCommRequest(whServerContext* server,
     {
         /* Process the echo action */
         if (req_packet != resp_packet) {
-            memcpy(resp_packet, req_packet, req_size);
+            WH_MEMCPY(resp_packet, req_packet, req_size);
         }
         *out_resp_size = req_size;
     }; break;
@@ -416,7 +416,7 @@ static uint16_t _FormatAuthErrorResponse(uint16_t magic, uint16_t group,
     {
         int32_t translated_rc =
             (int32_t)wh_Translate32(magic, (uint32_t)error_code);
-        memcpy(resp_packet, &translated_rc, sizeof(translated_rc));
+        WH_MEMCPY(resp_packet, &translated_rc, sizeof(translated_rc));
     }
 
     switch (group) {
@@ -448,7 +448,7 @@ static uint16_t _FormatAuthErrorResponse(uint16_t magic, uint16_t group,
                     whMessageAuth_UserGetResponse resp = {0};
                     resp.rc                            = error_code;
                     resp.user_id                       = WH_USER_ID_INVALID;
-                    memset(resp.permissions, 0, sizeof(resp.permissions));
+                    WH_MEMSET(resp.permissions, 0, sizeof(resp.permissions));
                     wh_MessageAuth_TranslateUserGetResponse(
                         magic, &resp,
                         (whMessageAuth_UserGetResponse*)resp_packet);
@@ -513,7 +513,7 @@ static uint16_t _FormatAuthErrorResponse(uint16_t magic, uint16_t group,
                     resp.access                           = 0;
                     resp.flags                            = 0;
                     resp.len                              = 0;
-                    memset(resp.label, 0, sizeof(resp.label));
+                    WH_MEMSET(resp.label, 0, sizeof(resp.label));
                     wh_MessageNvm_TranslateGetMetadataResponse(
                         magic, &resp,
                         (whMessageNvm_GetMetadataResponse*)resp_packet);

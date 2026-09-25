@@ -177,16 +177,16 @@ static int _GetUid(whServerContext* server, uint8_t* outUid)
     if (she->getUidCb != NULL) {
         ret = she->getUidCb(she->uidCtx, outUid);
         if (ret != 0) {
-            memset(outUid, 0, WH_SHE_UID_SZ);
+            WH_MEMSET(outUid, 0, WH_SHE_UID_SZ);
         }
         return ret;
     }
 
     if (she->uidSet == 0) {
-        memset(outUid, 0, WH_SHE_UID_SZ);
+        WH_MEMSET(outUid, 0, WH_SHE_UID_SZ);
         return WH_ERROR_NOTFOUND;
     }
-    memcpy(outUid, she->uid, WH_SHE_UID_SZ);
+    WH_MEMCPY(outUid, she->uid, WH_SHE_UID_SZ);
     return 0;
 }
 
@@ -202,7 +202,7 @@ static int _StoreUid(whServerContext* server, const uint8_t* uid)
         return she->setUidCb(she->uidCtx, uid);
     }
 
-    memcpy(she->uid, uid, WH_SHE_UID_SZ);
+    WH_MEMCPY(she->uid, uid, WH_SHE_UID_SZ);
     she->uidSet = 1;
     return 0;
 }
@@ -415,7 +415,7 @@ static int _SecureBootInit(whServerContext* server, uint16_t magic,
     }
     /* hash 12 zeros */
     if (ret == 0) {
-        memset(macKey, 0, WH_SHE_BOOT_MAC_PREFIX_LEN);
+        WH_MEMSET(macKey, 0, WH_SHE_BOOT_MAC_PREFIX_LEN);
         ret = wc_CmacUpdate(server->she->sheCmac, macKey,
                             WH_SHE_BOOT_MAC_PREFIX_LEN);
     }
@@ -673,8 +673,8 @@ static int _LoadKey(whServerContext* server, uint16_t magic, uint16_t req_size,
     /* make K2 using AES-MP(authKey | WH_SHE_KEY_UPDATE_MAC_C) */
     if (ret == 0) {
         /* add WH_SHE_KEY_UPDATE_MAC_C to the input */
-        memcpy(kdfInput + keySz, _SHE_KEY_UPDATE_MAC_C,
-               sizeof(_SHE_KEY_UPDATE_MAC_C));
+        WH_MEMCPY(kdfInput + keySz, _SHE_KEY_UPDATE_MAC_C,
+                  sizeof(_SHE_KEY_UPDATE_MAC_C));
         /* do kdf */
         ret = _AesMp16(server, kdfInput, keySz + sizeof(_SHE_KEY_UPDATE_MAC_C),
                        tmpKey);
@@ -687,9 +687,9 @@ static int _LoadKey(whServerContext* server, uint16_t magic, uint16_t req_size,
     if (ret == 0) {
         uint8_t cmacInput[sizeof(req.messageOne) + sizeof(req.messageTwo)];
         /* Concatenate messageOne and messageTwo for CMAC */
-        memcpy(cmacInput, req.messageOne, sizeof(req.messageOne));
-        memcpy(cmacInput + sizeof(req.messageOne), req.messageTwo,
-               sizeof(req.messageTwo));
+        WH_MEMCPY(cmacInput, req.messageOne, sizeof(req.messageOne));
+        WH_MEMCPY(cmacInput + sizeof(req.messageOne), req.messageTwo,
+                  sizeof(req.messageTwo));
 
         field = AES_BLOCK_SIZE;
         ret   = wc_AesCmacGenerate_ex(
@@ -703,8 +703,8 @@ static int _LoadKey(whServerContext* server, uint16_t magic, uint16_t req_size,
     /* make K1 using AES-MP(authKey | WH_SHE_KEY_UPDATE_ENC_C) */
     if (ret == 0) {
         /* add WH_SHE_KEY_UPDATE_ENC_C to the input */
-        memcpy(kdfInput + keySz, _SHE_KEY_UPDATE_ENC_C,
-               sizeof(_SHE_KEY_UPDATE_ENC_C));
+        WH_MEMCPY(kdfInput + keySz, _SHE_KEY_UPDATE_ENC_C,
+                  sizeof(_SHE_KEY_UPDATE_ENC_C));
         /* do kdf */
         ret = _AesMp16(server, kdfInput, keySz + sizeof(_SHE_KEY_UPDATE_ENC_C),
                        tmpKey);
@@ -770,7 +770,7 @@ static int _LoadKey(whServerContext* server, uint16_t magic, uint16_t req_size,
         ret = WH_SHE_ERC_KEY_UPDATE_ERROR;
     }
     /* verify msg_counter_val is greater than stored value */
-    memcpy(&msg_counter_val, req.messageTwo, sizeof(uint32_t));
+    WH_MEMCPY(&msg_counter_val, req.messageTwo, sizeof(uint32_t));
     if (ret == 0 && keyRet != WH_ERROR_NOTFOUND &&
         wh_Utils_ntohl(msg_counter_val) >> 4 <= she_meta_count) {
         ret = WH_SHE_ERC_KEY_UPDATE_ERROR;
@@ -826,10 +826,10 @@ static int _LoadKey(whServerContext* server, uint16_t magic, uint16_t req_size,
     /* generate K3 using the updated key */
     if (ret == 0) {
         /* copy new key to kdfInput */
-        memcpy(kdfInput, req.messageTwo + WH_SHE_KEY_SZ, WH_SHE_KEY_SZ);
+        WH_MEMCPY(kdfInput, req.messageTwo + WH_SHE_KEY_SZ, WH_SHE_KEY_SZ);
         /* add WH_SHE_KEY_UPDATE_ENC_C to the input */
-        memcpy(kdfInput + meta->len, _SHE_KEY_UPDATE_ENC_C,
-               sizeof(_SHE_KEY_UPDATE_ENC_C));
+        WH_MEMCPY(kdfInput + meta->len, _SHE_KEY_UPDATE_ENC_C,
+                  sizeof(_SHE_KEY_UPDATE_ENC_C));
         /* do kdf */
         ret = _AesMp16(server, kdfInput,
                        meta->len + sizeof(_SHE_KEY_UPDATE_ENC_C), tmpKey);
@@ -844,11 +844,11 @@ static int _LoadKey(whServerContext* server, uint16_t magic, uint16_t req_size,
     if (ret == 0) {
         /* Prepare counter in separate buffer */
         msg_counter_val = wh_Utils_htonl(she_meta_count << 4);
-        memcpy(counter_buffer, &msg_counter_val, sizeof(uint32_t));
+        WH_MEMCPY(counter_buffer, &msg_counter_val, sizeof(uint32_t));
         counter_buffer[3] |= 0x08;
 
         /* First copy UID into messageFour */
-        memcpy(resp.messageFour, uid, WH_SHE_UID_SZ);
+        WH_MEMCPY(resp.messageFour, uid, WH_SHE_UID_SZ);
         /* Set ID and AuthID in last byte */
         resp.messageFour[15] =
             ((_PopId(req.messageOne) << 4) | _PopAuthId(req.messageOne));
@@ -863,8 +863,8 @@ static int _LoadKey(whServerContext* server, uint16_t magic, uint16_t req_size,
     /* generate K4 using the updated key */
     if (ret == 0) {
         /* add WH_SHE_KEY_UPDATE_MAC_C to the input */
-        memcpy(kdfInput + meta->len, _SHE_KEY_UPDATE_MAC_C,
-               sizeof(_SHE_KEY_UPDATE_MAC_C));
+        WH_MEMCPY(kdfInput + meta->len, _SHE_KEY_UPDATE_MAC_C,
+                  sizeof(_SHE_KEY_UPDATE_MAC_C));
         /* do kdf */
         ret = _AesMp16(server, kdfInput,
                        meta->len + sizeof(_SHE_KEY_UPDATE_MAC_C), tmpKey);
@@ -979,12 +979,12 @@ static int _ExportRamKey(whServerContext* server, uint16_t magic,
     }
     if (ret == 0) {
         /* set UID, key id and authId */
-        memcpy(resp.messageOne, uid, WH_SHE_UID_SZ);
+        WH_MEMCPY(resp.messageOne, uid, WH_SHE_UID_SZ);
         resp.messageOne[15] =
             ((WH_SHE_RAM_KEY_ID << 4) | (WH_SHE_SECRET_KEY_ID));
         /* add WH_SHE_KEY_UPDATE_ENC_C to the input */
-        memcpy(kdfInput + meta->len, _SHE_KEY_UPDATE_ENC_C,
-               sizeof(_SHE_KEY_UPDATE_ENC_C));
+        WH_MEMCPY(kdfInput + meta->len, _SHE_KEY_UPDATE_ENC_C,
+                  sizeof(_SHE_KEY_UPDATE_ENC_C));
         /* generate K1 */
         ret = _AesMp16(server, kdfInput,
                        meta->len + sizeof(_SHE_KEY_UPDATE_ENC_C), tmpKey);
@@ -992,10 +992,10 @@ static int _ExportRamKey(whServerContext* server, uint16_t magic,
     /* build cleartext M2 */
     if (ret == 0) {
         /* set the counter, flags and ram key */
-        memset(resp.messageTwo, 0, sizeof(resp.messageTwo));
+        WH_MEMSET(resp.messageTwo, 0, sizeof(resp.messageTwo));
         /* set count to 1 */
         counter_val = wh_Utils_htonl(1 << 4);
-        memcpy(resp.messageTwo, &counter_val, sizeof(uint32_t));
+        WH_MEMCPY(resp.messageTwo, &counter_val, sizeof(uint32_t));
         keySz    = WH_SHE_KEY_SZ;
         ret      = wh_Server_KeystoreReadKey(
             server,
@@ -1015,7 +1015,7 @@ static int _ExportRamKey(whServerContext* server, uint16_t magic,
     }
     if (ret == 0) {
         /* copy the ram key to cmacOutput before it gets encrypted */
-        memcpy(cmacOutput, resp.messageTwo + WH_SHE_KEY_SZ, WH_SHE_KEY_SZ);
+        WH_MEMCPY(cmacOutput, resp.messageTwo + WH_SHE_KEY_SZ, WH_SHE_KEY_SZ);
         ret = wc_AesCbcEncrypt(server->she->sheAes, resp.messageTwo,
                                resp.messageTwo, sizeof(resp.messageTwo));
     }
@@ -1023,8 +1023,8 @@ static int _ExportRamKey(whServerContext* server, uint16_t magic,
     wc_AesFree(server->she->sheAes);
     if (ret == 0) {
         /* add WH_SHE_KEY_UPDATE_MAC_C to the input */
-        memcpy(kdfInput + meta->len, _SHE_KEY_UPDATE_MAC_C,
-               sizeof(_SHE_KEY_UPDATE_MAC_C));
+        WH_MEMCPY(kdfInput + meta->len, _SHE_KEY_UPDATE_MAC_C,
+                  sizeof(_SHE_KEY_UPDATE_MAC_C));
         /* generate K2 */
         ret = _AesMp16(server, kdfInput,
                        meta->len + sizeof(_SHE_KEY_UPDATE_MAC_C), tmpKey);
@@ -1033,9 +1033,9 @@ static int _ExportRamKey(whServerContext* server, uint16_t magic,
     if (ret == 0) {
         uint8_t cmacInput[sizeof(resp.messageOne) + sizeof(resp.messageTwo)];
         /* Concatenate messageOne and messageTwo for CMAC */
-        memcpy(cmacInput, resp.messageOne, sizeof(resp.messageOne));
-        memcpy(cmacInput + sizeof(resp.messageOne), resp.messageTwo,
-               sizeof(resp.messageTwo));
+        WH_MEMCPY(cmacInput, resp.messageOne, sizeof(resp.messageOne));
+        WH_MEMCPY(cmacInput + sizeof(resp.messageOne), resp.messageTwo,
+                  sizeof(resp.messageTwo));
 
         field = AES_BLOCK_SIZE;
         ret   = wc_AesCmacGenerate_ex(
@@ -1044,10 +1044,10 @@ static int _ExportRamKey(whServerContext* server, uint16_t magic,
     }
     if (ret == 0) {
         /* copy the ram key to kdfInput */
-        memcpy(kdfInput, cmacOutput, WH_SHE_KEY_SZ);
+        WH_MEMCPY(kdfInput, cmacOutput, WH_SHE_KEY_SZ);
         /* add WH_SHE_KEY_UPDATE_ENC_C to the input */
-        memcpy(kdfInput + WH_SHE_KEY_SZ, _SHE_KEY_UPDATE_ENC_C,
-               sizeof(_SHE_KEY_UPDATE_ENC_C));
+        WH_MEMCPY(kdfInput + WH_SHE_KEY_SZ, _SHE_KEY_UPDATE_ENC_C,
+                  sizeof(_SHE_KEY_UPDATE_ENC_C));
         /* generate K3 */
         ret = _AesMp16(server, kdfInput,
                        WH_SHE_KEY_SZ + sizeof(_SHE_KEY_UPDATE_ENC_C), tmpKey);
@@ -1061,11 +1061,11 @@ static int _ExportRamKey(whServerContext* server, uint16_t magic,
                            AES_ENCRYPTION);
     }
     if (ret == 0) {
-        memset(resp.messageFour, 0, sizeof(resp.messageFour));
+        WH_MEMSET(resp.messageFour, 0, sizeof(resp.messageFour));
         /* set counter to 1, pad with 1 bit */
         counter_val = wh_Utils_htonl(1 << 4);
-        memcpy(resp.messageFour + WH_SHE_KEY_SZ, &counter_val,
-               sizeof(uint32_t));
+        WH_MEMCPY(resp.messageFour + WH_SHE_KEY_SZ, &counter_val,
+                  sizeof(uint32_t));
         resp.messageFour[WH_SHE_KEY_SZ + 3] |= 0x08;
         /* encrypt the new counter */
         ret = wc_AesEncryptDirect(server->she->sheAes,
@@ -1076,12 +1076,12 @@ static int _ExportRamKey(whServerContext* server, uint16_t magic,
     wc_AesFree(server->she->sheAes);
     if (ret == 0) {
         /* set UID, key id and authId */
-        memcpy(resp.messageFour, uid, WH_SHE_UID_SZ);
+        WH_MEMCPY(resp.messageFour, uid, WH_SHE_UID_SZ);
         resp.messageFour[15] =
             ((WH_SHE_RAM_KEY_ID << 4) | (WH_SHE_SECRET_KEY_ID));
         /* add WH_SHE_KEY_UPDATE_MAC_C to the input */
-        memcpy(kdfInput + WH_SHE_KEY_SZ, _SHE_KEY_UPDATE_MAC_C,
-               sizeof(_SHE_KEY_UPDATE_MAC_C));
+        WH_MEMCPY(kdfInput + WH_SHE_KEY_SZ, _SHE_KEY_UPDATE_MAC_C,
+                  sizeof(_SHE_KEY_UPDATE_MAC_C));
         /* generate K4 */
         ret = _AesMp16(server, kdfInput,
                        WH_SHE_KEY_SZ + sizeof(_SHE_KEY_UPDATE_MAC_C), tmpKey);
@@ -1142,8 +1142,8 @@ static int _InitRnd(whServerContext* server, uint16_t magic, uint16_t req_size,
     }
     if (ret == 0) {
         /* add PRNG_SEED_KEY_C */
-        memcpy(kdfInput + WH_SHE_KEY_SZ, _SHE_PRNG_SEED_KEY_C,
-               sizeof(_SHE_PRNG_SEED_KEY_C));
+        WH_MEMCPY(kdfInput + WH_SHE_KEY_SZ, _SHE_PRNG_SEED_KEY_C,
+                  sizeof(_SHE_PRNG_SEED_KEY_C));
         /* generate PRNG_SEED_KEY */
         ret = _AesMp16(server, kdfInput,
                        WH_SHE_KEY_SZ + sizeof(_SHE_PRNG_SEED_KEY_C), tmpKey);
@@ -1201,10 +1201,10 @@ static int _InitRnd(whServerContext* server, uint16_t magic, uint16_t req_size,
     }
     if (ret == 0) {
         /* set PRNG_STATE */
-        memcpy(server->she->prngState, cmacOutput, WH_SHE_KEY_SZ);
+        WH_MEMCPY(server->she->prngState, cmacOutput, WH_SHE_KEY_SZ);
         /* add PRNG_KEY_C to the kdf input */
-        memcpy(kdfInput + WH_SHE_KEY_SZ, _SHE_PRNG_KEY_C,
-               sizeof(_SHE_PRNG_KEY_C));
+        WH_MEMCPY(kdfInput + WH_SHE_KEY_SZ, _SHE_PRNG_KEY_C,
+                  sizeof(_SHE_PRNG_KEY_C));
         /* generate PRNG_KEY */
         ret =
             _AesMp16(server, kdfInput, WH_SHE_KEY_SZ + sizeof(_SHE_PRNG_KEY_C),
@@ -1268,7 +1268,7 @@ static int _Rnd(whServerContext* server, uint16_t magic, uint16_t req_size,
 
     if (ret == 0) {
         /* copy PRNG_STATE */
-        memcpy(resp.rnd, server->she->prngState, WH_SHE_KEY_SZ);
+        WH_MEMCPY(resp.rnd, server->she->prngState, WH_SHE_KEY_SZ);
     }
 
     resp.rc = _TranslateSheReturnCode(ret);
@@ -1302,9 +1302,9 @@ static int _ExtendSeed(whServerContext* server, uint16_t magic,
     }
     if (ret == 0) {
         /* set kdfInput to PRNG_STATE */
-        memcpy(kdfInput, server->she->prngState, WH_SHE_KEY_SZ);
+        WH_MEMCPY(kdfInput, server->she->prngState, WH_SHE_KEY_SZ);
         /* add the user supplied entropy to kdfInput */
-        memcpy(kdfInput + WH_SHE_KEY_SZ, req.entropy, sizeof(req.entropy));
+        WH_MEMCPY(kdfInput + WH_SHE_KEY_SZ, req.entropy, sizeof(req.entropy));
         /* extend PRNG_STATE */
         ret = _AesMp16(server, kdfInput, WH_SHE_KEY_SZ + sizeof(req.entropy),
                        server->she->prngState);
@@ -1852,8 +1852,8 @@ static int _GetId(whServerContext* server, uint16_t magic, uint16_t req_size,
     if (ret == 0) {
         /* Assemble the CMAC input: challenge || uid || sreg */
         uint8_t sreg = _BuildSreg(server);
-        memcpy(macIn, req.challenge, WH_SHE_KEY_SZ);
-        memcpy(macIn + WH_SHE_KEY_SZ, uid, WH_SHE_UID_SZ);
+        WH_MEMCPY(macIn, req.challenge, WH_SHE_KEY_SZ);
+        WH_MEMCPY(macIn + WH_SHE_KEY_SZ, uid, WH_SHE_UID_SZ);
         macIn[WH_SHE_KEY_SZ + WH_SHE_UID_SZ] = sreg;
 
         keySz = WH_SHE_KEY_SZ;
@@ -1863,7 +1863,7 @@ static int _GetId(whServerContext* server, uint16_t magic, uint16_t req_size,
                                 WH_SHE_MASTER_ECU_KEY_ID),
               NULL, tmpKey, &keySz);
         if (ret == WH_ERROR_NOTFOUND) {
-            memset(tmpKey, 0, WH_SHE_KEY_SZ);
+            WH_MEMSET(tmpKey, 0, WH_SHE_KEY_SZ);
             ret = 0;
         }
         else if (ret == 0 && keySz != WH_SHE_KEY_SZ) {
@@ -1880,7 +1880,7 @@ static int _GetId(whServerContext* server, uint16_t magic, uint16_t req_size,
 
         /* Fill the remaining response fields */
         if (ret == 0) {
-            memcpy(resp.uid, uid, WH_SHE_UID_SZ);
+            WH_MEMCPY(resp.uid, uid, WH_SHE_UID_SZ);
             resp.sreg = sreg;
         }
     }

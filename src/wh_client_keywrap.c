@@ -47,8 +47,8 @@ int wh_Client_KeyWrapRequest(whClientContext*   ctx,
 
     /* Place the metadata + key right after the request */
     reqData = (uint8_t*)(req + 1);
-    memcpy(reqData, metadata, sizeof(*metadata));
-    memcpy(reqData + sizeof(*metadata), key, keySz);
+    WH_MEMCPY(reqData, metadata, sizeof(*metadata));
+    WH_MEMCPY(reqData + sizeof(*metadata), key, keySz);
 
     return wh_Client_SendRequest(ctx, group, action,
                                  sizeof(*req) + sizeof(*metadata) + keySz,
@@ -99,7 +99,7 @@ int wh_Client_KeyWrapResponse(whClientContext*   ctx,
 
     /* Copy the wrapped key from the response data into wrappedKeyOut */
     respData = (uint8_t*)(resp + 1);
-    memcpy(wrappedKeyOut, respData, resp->wrappedKeySz);
+    WH_MEMCPY(wrappedKeyOut, respData, resp->wrappedKeySz);
     *wrappedKeyInOutSz = resp->wrappedKeySz;
 
     return WH_ERROR_OK;
@@ -205,7 +205,7 @@ int wh_Client_KeyWrapExportResponse(whClientContext*   ctx,
     }
 
     respData = (uint8_t*)(resp + 1);
-    memcpy(wrappedKeyOut, respData, resp->wrappedKeySz);
+    WH_MEMCPY(wrappedKeyOut, respData, resp->wrappedKeySz);
     *wrappedKeyInOutSz = resp->wrappedKeySz;
 
     return WH_ERROR_OK;
@@ -274,7 +274,7 @@ int wh_Client_KeyUnwrapAndExportRequest(whClientContext*   ctx,
 
     /* Place the wrapped key right after the request */
     reqData = (uint8_t*)(req + 1);
-    memcpy(reqData, wrappedKeyIn, wrappedKeySz);
+    WH_MEMCPY(reqData, wrappedKeyIn, wrappedKeySz);
 
     return wh_Client_SendRequest(ctx, group, action,
                                  sizeof(*req) + wrappedKeySz, (uint8_t*)req);
@@ -329,8 +329,8 @@ int wh_Client_KeyUnwrapAndExportResponse(whClientContext*   ctx,
     /* Copy the metadata and key from the response data into metadataOut and
      * keyOut */
     respData = (uint8_t*)(resp + 1);
-    memcpy(metadataOut, respData, sizeof(*metadataOut));
-    memcpy(keyOut, respData + sizeof(*metadataOut), resp->keySz);
+    WH_MEMCPY(metadataOut, respData, sizeof(*metadataOut));
+    WH_MEMCPY(keyOut, respData + sizeof(*metadataOut), resp->keySz);
     *keyInOutSz = resp->keySz;
 
     return WH_ERROR_OK;
@@ -398,7 +398,7 @@ int wh_Client_KeyUnwrapAndCacheRequest(whClientContext*   ctx,
 
     /* Place the wrapped key right after the request */
     reqData = (uint8_t*)(req + 1);
-    memcpy(reqData, wrappedKeyIn, wrappedKeySz);
+    WH_MEMCPY(reqData, wrappedKeyIn, wrappedKeySz);
 
     return wh_Client_SendRequest(ctx, group, action,
                                  sizeof(*req) + wrappedKeySz, (uint8_t*)req);
@@ -505,7 +505,7 @@ int wh_Client_DataWrapRequest(whClientContext*   ctx,
 
     /* Place the wrapped key right after the request */
     reqData = (uint8_t*)(req + 1);
-    memcpy(reqData, dataIn, dataInSz);
+    WH_MEMCPY(reqData, dataIn, dataInSz);
 
     return wh_Client_SendRequest(ctx, group, action, sizeof(*req) + dataInSz,
                                  (uint8_t*)req);
@@ -555,7 +555,7 @@ int wh_Client_DataWrapResponse(whClientContext*   ctx,
 
     /* Copy the wrapped key from the response data into wrappedKeyOut */
     respData = (uint8_t*)(resp + 1);
-    memcpy(wrappedDataOut, respData, resp->wrappedDataSz);
+    WH_MEMCPY(wrappedDataOut, respData, resp->wrappedDataSz);
     *wrappedDataSz = resp->wrappedDataSz;
 
     return WH_ERROR_OK;
@@ -622,7 +622,7 @@ int wh_Client_DataUnwrapRequest(whClientContext*   ctx,
 
     /* Place the wrapped data right after the request */
     reqData = (uint8_t*)(req + 1);
-    memcpy(reqData, wrappedDataIn, wrappedDataInSz);
+    WH_MEMCPY(reqData, wrappedDataIn, wrappedDataInSz);
 
     return wh_Client_SendRequest(ctx, group, action,
                                  sizeof(*req) + wrappedDataInSz, (uint8_t*)req);
@@ -672,7 +672,7 @@ int wh_Client_DataUnwrapResponse(whClientContext*   ctx,
 
     /* Copy the wrapped key from the response data into wrappedKeyOut */
     respData = (uint8_t*)(resp + 1);
-    memcpy(dataOut, respData, resp->dataSz);
+    WH_MEMCPY(dataOut, respData, resp->dataSz);
     *dataSz = resp->dataSz;
 
     return WH_ERROR_OK;

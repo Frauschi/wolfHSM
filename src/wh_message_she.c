@@ -44,7 +44,7 @@ int wh_MessageShe_TranslateSetUidRequest(uint16_t magic,
         return WH_ERROR_BADARGS;
     }
     if (src != dest) {
-        memcpy(dest->uid, src->uid, WH_SHE_UID_SZ);
+        WH_MEMCPY(dest->uid, src->uid, WH_SHE_UID_SZ);
     }
     return 0;
 }
@@ -146,9 +146,9 @@ int wh_MessageShe_TranslateLoadKeyRequest(
         return WH_ERROR_BADARGS;
     }
     if (src != dest) {
-        memcpy(dest->messageOne, src->messageOne, WH_SHE_M1_SZ);
-        memcpy(dest->messageTwo, src->messageTwo, WH_SHE_M2_SZ);
-        memcpy(dest->messageThree, src->messageThree, WH_SHE_M3_SZ);
+        WH_MEMCPY(dest->messageOne, src->messageOne, WH_SHE_M1_SZ);
+        WH_MEMCPY(dest->messageTwo, src->messageTwo, WH_SHE_M2_SZ);
+        WH_MEMCPY(dest->messageThree, src->messageThree, WH_SHE_M3_SZ);
     }
     return 0;
 }
@@ -162,8 +162,8 @@ int wh_MessageShe_TranslateLoadKeyResponse(
     }
     WH_T32(magic, dest, src, rc);
     if (src != dest) {
-        memcpy(dest->messageFour, src->messageFour, WH_SHE_M4_SZ);
-        memcpy(dest->messageFive, src->messageFive, WH_SHE_M5_SZ);
+        WH_MEMCPY(dest->messageFour, src->messageFour, WH_SHE_M4_SZ);
+        WH_MEMCPY(dest->messageFive, src->messageFive, WH_SHE_M5_SZ);
     }
     return 0;
 }
@@ -179,7 +179,7 @@ int wh_MessageShe_TranslateLoadPlainKeyRequest(
         return WH_ERROR_BADARGS;
     }
     if (src != dest) {
-        memcpy(dest->key, src->key, WH_SHE_KEY_SZ);
+        WH_MEMCPY(dest->key, src->key, WH_SHE_KEY_SZ);
     }
     return 0;
 }
@@ -205,11 +205,11 @@ int wh_MessageShe_TranslateExportRamKeyResponse(
     }
     WH_T32(magic, dest, src, rc);
     if (src != dest) {
-        memcpy(dest->messageOne, src->messageOne, WH_SHE_M1_SZ);
-        memcpy(dest->messageTwo, src->messageTwo, WH_SHE_M2_SZ);
-        memcpy(dest->messageThree, src->messageThree, WH_SHE_M3_SZ);
-        memcpy(dest->messageFour, src->messageFour, WH_SHE_M4_SZ);
-        memcpy(dest->messageFive, src->messageFive, WH_SHE_M5_SZ);
+        WH_MEMCPY(dest->messageOne, src->messageOne, WH_SHE_M1_SZ);
+        WH_MEMCPY(dest->messageTwo, src->messageTwo, WH_SHE_M2_SZ);
+        WH_MEMCPY(dest->messageThree, src->messageThree, WH_SHE_M3_SZ);
+        WH_MEMCPY(dest->messageFour, src->messageFour, WH_SHE_M4_SZ);
+        WH_MEMCPY(dest->messageFive, src->messageFive, WH_SHE_M5_SZ);
     }
     return 0;
 }
@@ -237,7 +237,7 @@ int wh_MessageShe_TranslateRndResponse(uint16_t                        magic,
     }
     WH_T32(magic, dest, src, rc);
     if (src != dest) {
-        memcpy(dest->rnd, src->rnd, WH_SHE_KEY_SZ);
+        WH_MEMCPY(dest->rnd, src->rnd, WH_SHE_KEY_SZ);
     }
     return 0;
 }
@@ -253,7 +253,7 @@ int wh_MessageShe_TranslateExtendSeedRequest(
         return WH_ERROR_BADARGS;
     }
     if (src != dest) {
-        memcpy(dest->entropy, src->entropy, WH_SHE_KEY_SZ);
+        WH_MEMCPY(dest->entropy, src->entropy, WH_SHE_KEY_SZ);
     }
     return 0;
 }
@@ -306,7 +306,7 @@ int wh_MessageShe_TranslateEncCbcRequest(uint16_t magic,
     WH_T32(magic, dest, src, sz);
     dest->keyId = src->keyId;
     if (src != dest) {
-        memcpy(dest->iv, src->iv, WH_SHE_KEY_SZ);
+        WH_MEMCPY(dest->iv, src->iv, WH_SHE_KEY_SZ);
     }
     return 0;
 }
@@ -359,7 +359,7 @@ int wh_MessageShe_TranslateDecCbcRequest(uint16_t magic,
     WH_T32(magic, dest, src, sz);
     dest->keyId = src->keyId;
     if (src != dest) {
-        memcpy(dest->iv, src->iv, WH_SHE_KEY_SZ);
+        WH_MEMCPY(dest->iv, src->iv, WH_SHE_KEY_SZ);
     }
     return 0;
 }
@@ -398,7 +398,7 @@ int wh_MessageShe_TranslateGenMacResponse(
     }
     WH_T32(magic, dest, src, rc);
     if (src != dest) {
-        memcpy(dest->mac, src->mac, WH_SHE_KEY_SZ);
+        WH_MEMCPY(dest->mac, src->mac, WH_SHE_KEY_SZ);
     }
     return 0;
 }
@@ -440,7 +440,7 @@ int wh_MessageShe_TranslateGetIdRequest(uint16_t magic,
         return WH_ERROR_BADARGS;
     }
     if (src != dest) {
-        memcpy(dest->challenge, src->challenge, WH_SHE_KEY_SZ);
+        WH_MEMCPY(dest->challenge, src->challenge, WH_SHE_KEY_SZ);
     }
     return 0;
 }
@@ -454,8 +454,8 @@ int wh_MessageShe_TranslateGetIdResponse(
     }
     WH_T32(magic, dest, src, rc);
     if (src != dest) {
-        memcpy(dest->uid, src->uid, WH_SHE_UID_SZ);
-        memcpy(dest->mac, src->mac, WH_SHE_KEY_SZ);
+        WH_MEMCPY(dest->uid, src->uid, WH_SHE_UID_SZ);
+        WH_MEMCPY(dest->mac, src->mac, WH_SHE_KEY_SZ);
     }
     dest->sreg = src->sreg;
     return 0;

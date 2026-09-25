@@ -86,7 +86,7 @@ int wh_Timeout_Cleanup(whTimeout* timeout)
     }
 
     /* Zero the entire structure to make post-cleanup state distinguishable */
-    memset(timeout, 0, sizeof(*timeout));
+    WH_MEMSET(timeout, 0, sizeof(*timeout));
 
     return WH_ERROR_OK;
 }

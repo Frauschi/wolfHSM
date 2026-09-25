@@ -47,11 +47,11 @@ int wh_She_Label2Meta(const uint8_t* label, uint32_t *out_count,
     }
 
     if (out_count != NULL) {
-        memcpy(&tmp, label, sizeof(uint32_t));
+        WH_MEMCPY(&tmp, label, sizeof(uint32_t));
         *out_count = wh_Utils_ntohl(tmp);
     }
     if (out_flags != NULL) {
-        memcpy(&tmp, label + sizeof(uint32_t), sizeof(uint32_t));
+        WH_MEMCPY(&tmp, label + sizeof(uint32_t), sizeof(uint32_t));
         *out_flags = wh_Utils_ntohl(tmp);
     }
     return 0;
@@ -66,9 +66,9 @@ int wh_She_Meta2Label(uint32_t count, uint32_t flags, uint8_t* label)
     }
 
     tmp = wh_Utils_htonl(count);
-    memcpy(label, &tmp, sizeof(uint32_t));
+    WH_MEMCPY(label, &tmp, sizeof(uint32_t));
     tmp = wh_Utils_htonl(flags);
-    memcpy(label + sizeof(uint32_t), &tmp, sizeof(uint32_t));
+    WH_MEMCPY(label + sizeof(uint32_t), &tmp, sizeof(uint32_t));
 
     return 0;
 }

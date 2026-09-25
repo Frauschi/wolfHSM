@@ -43,7 +43,7 @@ int whLogPrintf_Init(void* context, const void* config)
     }
 
     /* Initialize context */
-    memset(ctx, 0, sizeof(*ctx));
+    WH_MEMSET(ctx, 0, sizeof(*ctx));
 
     /* Copy config if provided, otherwise use defaults */
     if (cfg != NULL) {

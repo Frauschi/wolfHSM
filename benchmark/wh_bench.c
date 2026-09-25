@@ -1067,7 +1067,7 @@ static int _configureClientTransport(whBenchTransportType transport,
                 .client_id         = WH_BENCH_CLIENT_ID,
             };
 
-            memset(&tccShm, 0, sizeof(posixTransportShmClientContext));
+            WH_MEMSET(&tccShm, 0, sizeof(posixTransportShmClientContext));
             c_conf->comm = &ccShmConf;
             break;
         }
@@ -1087,7 +1087,7 @@ static int _configureClientTransport(whBenchTransportType transport,
                 .client_id         = WH_BENCH_CLIENT_ID,
             };
 
-            memset(&tccTcp, 0, sizeof(posixTransportTcpClientContext));
+            WH_MEMSET(&tccTcp, 0, sizeof(posixTransportTcpClientContext));
             c_conf->comm = &ccTcpConf;
             break;
         }
@@ -1142,7 +1142,7 @@ static int _configureServerTransport(whBenchTransportType transport,
                 .server_id         = 57,
             };
 
-            memset(&tscShm, 0, sizeof(posixTransportShmServerContext));
+            WH_MEMSET(&tscShm, 0, sizeof(posixTransportShmServerContext));
             s_conf->comm_config = &csShmConf;
             break;
         }
@@ -1162,7 +1162,7 @@ static int _configureServerTransport(whBenchTransportType transport,
                 .server_id         = 57,
             };
 
-            memset(&tscTcp, 0, sizeof(posixTransportTcpServerContext));
+            WH_MEMSET(&tscTcp, 0, sizeof(posixTransportTcpServerContext));
             s_conf->comm_config = &csTcpConf;
             break;
         }

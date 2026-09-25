@@ -80,7 +80,7 @@ int wh_Server_ImgMgrInit(whServerImgMgrContext*      context,
     }
 
     /* Initialize context */
-    memset(context, 0, sizeof(*context));
+    WH_MEMSET(context, 0, sizeof(*context));
     context->imageCount = config->imageCount;
     context->server     = config->server;
 
@@ -484,7 +484,7 @@ int wh_Server_ImgMgrVerifyMethodRsaSslWithSha256(
 
     /* Compare the decrypted hash with computed hash */
     if (decryptedLen != sizeof(hash) ||
-        XMEMCMP(decrypted, hash, sizeof(hash)) != 0) {
+        WH_MEMCMP(decrypted, hash, sizeof(hash)) != 0) {
         wc_FreeRsaKey(&rsaKey);
         return WH_ERROR_NOTVERIFIED; /* RSA verification failed */
     }
@@ -701,7 +701,7 @@ static int _wolfBootImgVerifySigRsa4096(const uint8_t* sig, uint16_t sigSz,
         return WH_ERROR_ABORTED;
     }
 
-    memcpy(output, sig, 512);
+    WH_MEMCPY(output, sig, 512);
     ret = wc_RsaSSL_VerifyInline(output, 512, &digest_out, &rsa);
     wc_FreeRsaKey(&rsa);
 
@@ -721,7 +721,7 @@ static int _wolfBootImgVerifySigRsa4096(const uint8_t* sig, uint16_t sigSz,
         return WH_ERROR_NOTVERIFIED;
     }
 
-    if (memcmp(digest_out, hash, hashSz) != 0) {
+    if (WH_MEMCMP(digest_out, hash, hashSz) != 0) {
         return WH_ERROR_NOTVERIFIED;
     }
 
@@ -766,7 +766,7 @@ static int _wolfBootImgVerifyPubKeyHint(const uint8_t* pubkey,
         return WH_ERROR_ABORTED;
     }
 
-    if (memcmp(key_hash, hint, WC_SHA256_DIGEST_SIZE) != 0) {
+    if (WH_MEMCMP(key_hash, hint, WC_SHA256_DIGEST_SIZE) != 0) {
         return WH_ERROR_NOTVERIFIED;
     }
 
@@ -897,7 +897,7 @@ static int _wolfBootImgValidateAndHash(
     }
 
     /* Compare computed hash with stored hash */
-    if (memcmp(computed_hash, stored_sha, WC_SHA256_DIGEST_SIZE) != 0) {
+    if (WH_MEMCMP(computed_hash, stored_sha, WC_SHA256_DIGEST_SIZE) != 0) {
         return WH_ERROR_NOTVERIFIED;
     }
 
@@ -1041,7 +1041,7 @@ static int _wolfBootImgEcc256KeyToRaw(const uint8_t* key, size_t keySz,
     }
 
     if (keySz == 64) {
-        memcpy(rawKey, key, 64);
+        WH_MEMCPY(rawKey, key, 64);
         return WH_ERROR_OK;
     }
 

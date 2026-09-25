@@ -125,7 +125,7 @@ int wh_Client_DmaAsyncPre(whClientContext* client, whClientDmaAsyncBuf* buf,
 
     /* Clear the whole slot up front so a skipped or failed PRE leaves nothing
      * for the matching POST (run in the Response) to act on. */
-    memset(buf, 0, sizeof(*buf));
+    WH_MEMSET(buf, 0, sizeof(*buf));
     *outXformedAddr = 0;
 
     /* Nothing to map (e.g. an optional buffer that is absent): leave the slot
@@ -167,7 +167,7 @@ int wh_Client_DmaAsyncPost(whClientContext* client, whClientDmaAsyncBuf* buf)
                                              buf->postOper, (whDmaFlags){0});
     /* Clear the whole slot even on failure so a later Response cannot re-run
      * the POST; the failure is returned to the caller. */
-    memset(buf, 0, sizeof(*buf));
+    WH_MEMSET(buf, 0, sizeof(*buf));
     return rc;
 }
 #endif /* WOLFHSM_CFG_DMA */

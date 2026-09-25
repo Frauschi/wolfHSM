@@ -64,7 +64,7 @@ int whFlashRamsim_Init(void* context, const void* config)
         return WH_ERROR_BADARGS;
     }
 
-    memset(ctx, 0, sizeof(*ctx));
+    WH_MEMSET(ctx, 0, sizeof(*ctx));
     ctx->size        = cfg->size;
     ctx->sectorSize  = cfg->sectorSize;
     ctx->pageSize    = cfg->pageSize;
@@ -74,9 +74,9 @@ int whFlashRamsim_Init(void* context, const void* config)
 
     /* Initialize memory based on initData or simulate starting from erased flash */
     if (cfg->initData != NULL) {
-        memcpy(ctx->memory, cfg->initData, ctx->size);
+        WH_MEMCPY(ctx->memory, cfg->initData, ctx->size);
     } else {
-        memset(ctx->memory, ctx->erasedByte, ctx->size);
+        WH_MEMSET(ctx->memory, ctx->erasedByte, ctx->size);
     }
 
     return WH_ERROR_OK;
@@ -123,7 +123,7 @@ int whFlashRamsim_Program(void* context, uint32_t offset, uint32_t size,
 
     /* Perform the programming operation */
     if (size != 0) {
-        memcpy(ctx->memory + offset, data, size);
+        WH_MEMCPY(ctx->memory + offset, data, size);
     }
     return WH_ERROR_OK;
 }
@@ -141,7 +141,7 @@ int whFlashRamsim_Read(void* context, uint32_t offset, uint32_t size,
     }
 
     if (size != 0) {
-        memcpy(data, ctx->memory + offset, size);
+        WH_MEMCPY(data, ctx->memory + offset, size);
     }
     return WH_ERROR_OK;
 }
@@ -167,7 +167,7 @@ int whFlashRamsim_Erase(void* context, uint32_t offset, uint32_t size)
 
     /* Perform the erase */
     if (size != 0) {
-        memset(ctx->memory + offset, ctx->erasedByte, size);
+        WH_MEMSET(ctx->memory + offset, ctx->erasedByte, size);
     }
     return WH_ERROR_OK;
 }
@@ -185,7 +185,7 @@ int whFlashRamsim_Verify(void* context, uint32_t offset, uint32_t size,
 
     /* Check stored data equals input data */
     if (size != 0) {
-        if(memcmp(ctx->memory + offset, data, size) != 0) {
+        if(WH_MEMCMP(ctx->memory + offset, data, size) != 0) {
             return WH_ERROR_NOTVERIFIED;
         }
     }

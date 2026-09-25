@@ -44,7 +44,7 @@ int wh_HwKeystore_Init(whHwKeystoreContext*      context,
         return WH_ERROR_BADARGS;
     }
 
-    memset(context, 0, sizeof(*context));
+    WH_MEMSET(context, 0, sizeof(*context));
     context->cb      = config->cb;
     context->context = config->context;
 
@@ -56,7 +56,7 @@ int wh_HwKeystore_Init(whHwKeystoreContext*      context,
     {
         int rc = wh_Lock_Init(&context->lock, config->lockConfig);
         if (rc != WH_ERROR_OK) {
-            memset(context, 0, sizeof(*context));
+            WH_MEMSET(context, 0, sizeof(*context));
             return rc;
         }
     }
@@ -71,7 +71,7 @@ int wh_HwKeystore_Init(whHwKeystoreContext*      context,
 #ifdef WOLFHSM_CFG_THREADSAFE
             (void)wh_Lock_Cleanup(&context->lock);
 #endif /* WOLFHSM_CFG_THREADSAFE */
-            memset(context, 0, sizeof(*context));
+            WH_MEMSET(context, 0, sizeof(*context));
             return rc;
         }
     }
@@ -105,7 +105,7 @@ int wh_HwKeystore_Cleanup(whHwKeystoreContext* context)
     }
 #endif /* WOLFHSM_CFG_THREADSAFE */
 
-    memset(context, 0, sizeof(*context));
+    WH_MEMSET(context, 0, sizeof(*context));
     return rc;
 }
 

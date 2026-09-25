@@ -69,7 +69,7 @@ int wh_MessageCert_TranslateAddTrustedRequest(
     WH_T16(magic, dest, src, access);
     WH_T16(magic, dest, src, flags);
     /* Label array doesn't need byte-order translation */
-    memcpy(dest->label, src->label, WH_NVM_LABEL_LEN);
+    WH_MEMCPY(dest->label, src->label, WH_NVM_LABEL_LEN);
     return 0;
 }
 
@@ -164,7 +164,7 @@ int wh_MessageCert_TranslateAddTrustedDmaRequest(
     WH_T16(magic, dest, src, access);
     WH_T16(magic, dest, src, flags);
     /* Label array doesn't need byte-order translation */
-    memcpy(dest->label, src->label, WH_NVM_LABEL_LEN);
+    WH_MEMCPY(dest->label, src->label, WH_NVM_LABEL_LEN);
     return 0;
 }
 

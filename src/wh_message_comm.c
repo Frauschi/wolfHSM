@@ -66,8 +66,8 @@ int wh_MessageComm_TranslateInfoResponse(uint16_t magic,
             (dest == NULL)  ) {
         return WH_ERROR_BADARGS;
     }
-    memcpy(dest->version, src->version, sizeof(dest->version));
-    memcpy(dest->build, src->build, sizeof(dest->build));
+    WH_MEMCPY(dest->version, src->version, sizeof(dest->version));
+    WH_MEMCPY(dest->build, src->build, sizeof(dest->build));
     WH_T32(magic, dest, src, cfg_comm_data_len);
     WH_T32(magic, dest, src, cfg_nvm_object_count);
     WH_T32(magic, dest, src, cfg_server_keycache_count);

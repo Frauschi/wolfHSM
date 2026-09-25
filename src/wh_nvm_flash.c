@@ -177,7 +177,7 @@ static int nfMemState_Read(whNvmFlashContext* context, uint32_t offset,
         return WH_ERROR_BADARGS;
     }
 
-    memset(state, 0, sizeof(*state));
+    WH_MEMSET(state, 0, sizeof(*state));
     state->status = NF_STATUS_UNKNOWN;
 
     blank_epoch = wh_FlashUnit_BlankCheck(
@@ -284,7 +284,7 @@ static int nfMemObject_Read(whNvmFlashContext* context,
                 buffer);
         if (rc == 0) {
             /* Copy the metadata out of the buffer */
-            memcpy(&object->metadata, buffer, sizeof(object->metadata));
+            WH_MEMCPY(&object->metadata, buffer, sizeof(object->metadata));
             clear_metadata = 0;
 #ifdef WOLFHSM_CFG_NVM_FLASH_CRC16
             /* Verify the metadata against the CRC in the start state word */
@@ -308,7 +308,7 @@ static int nfMemObject_Read(whNvmFlashContext* context,
     }
     if (clear_metadata != 0){
         /* Clear the object metadata */
-        memset(&object->metadata, 0, sizeof(object->metadata));
+        WH_MEMSET(&object->metadata, 0, sizeof(object->metadata));
     }
     return rc;
 }
@@ -414,7 +414,7 @@ static int nfPartition_ReadMemDirectory(whNvmFlashContext* context, int partitio
 
     offset = nfPartition_Offset(context, partition) +
                 NF_PARTITION_DIRECTORY_OFFSET;
-    memset(directory, 0, sizeof(*directory));
+    WH_MEMSET(directory, 0, sizeof(*directory));
     directory->max_data = context->partition_units - NF_PARTITION_DATA_OFFSET;
 
     for (index = 0; (index < WOLFHSM_CFG_NVM_OBJECT_COUNT); index++) {
@@ -1027,7 +1027,7 @@ int wh_NvmFlash_Init(void* c, const void* cf)
     }
     if (ret == WH_ERROR_OK) {
         /* Initialize and setup context */
-        memset(context, 0, sizeof(*context));
+        WH_MEMSET(context, 0, sizeof(*context));
         context->cb = config->cb;
         context->flash = config->context;
 
@@ -1229,9 +1229,9 @@ int wh_NvmFlash_GetMetadata(void* c, whNvmId id, whNvmMetadata* meta)
     ret = nfMemDirectory_FindObjectIndexById(&context->directory, id, &entry);
     if (ret == 0) {
         if (meta != NULL) {
-           memcpy(  meta,
-                    &context->directory.objects[entry].metadata,
-                    sizeof(*meta));
+           WH_MEMCPY(  meta,
+                       &context->directory.objects[entry].metadata,
+                       sizeof(*meta));
         }
     }
     return ret;
@@ -1296,7 +1296,8 @@ int wh_NvmFlash_AddObject(void* c, whNvmMetadata *meta,
         d->objects[d->next_free_object].state.crc_meta = crc_meta;
         d->objects[d->next_free_object].state.crc_data = crc_data;
 #endif
-        memcpy(&d->objects[d->next_free_object].metadata, meta, sizeof(*meta));
+        WH_MEMCPY(&d->objects[d->next_free_object].metadata, meta,
+                  sizeof(*meta));
         d->next_free_data += count;
         d->next_free_object++;
 

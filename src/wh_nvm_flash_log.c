@@ -307,9 +307,9 @@ static int nfl_ObjectDestroy(whNvmFlashLogContext* ctx, whNvmId id)
     len  = sizeof(whNvmFlashLogMetadata) + PAD_SIZE(obj->meta.len);
     off  = (uint8_t*)obj - ctx->directory.data;
     tail = ctx->directory.header.size - (off + len);
-    memmove(obj, (uint8_t*)obj + len, tail);
+    WH_MEMMOVE(obj, (uint8_t*)obj + len, tail);
     /* be sure to clean-up moved objects from memory */
-    memset((uint8_t*)obj + tail, 0, len);
+    WH_MEMSET((uint8_t*)obj + tail, 0, len);
     ctx->directory.header.size -= len;
     return WH_ERROR_OK;
 }
@@ -433,7 +433,7 @@ int wh_NvmFlashLog_Init(void* c, const void* cf)
     if (config->flash_cb->PartitionSize == NULL) {
         return WH_ERROR_BADARGS;
     }
-    memset(context, 0, sizeof(*context));
+    WH_MEMSET(context, 0, sizeof(*context));
 
     ret = 0;
     if (config->flash_cb->Init != NULL)
@@ -596,7 +596,7 @@ int wh_NvmFlashLog_GetMetadata(void* c, whNvmId id, whNvmMetadata* meta)
     }
 
     if (meta != NULL)
-        memcpy(meta, &obj->meta, sizeof(*meta));
+        WH_MEMCPY(meta, &obj->meta, sizeof(*meta));
     return WH_ERROR_OK;
 }
 
@@ -640,8 +640,8 @@ int wh_NvmFlashLog_AddObject(void* c, whNvmMetadata* meta, whNvmSize data_len,
     obj       = (whNvmFlashLogMetadata*)(ctx->directory.data +
                                    ctx->directory.header.size);
     meta->len = data_len;
-    memcpy(&obj->meta, meta, sizeof(*meta));
-    memcpy((uint8_t*)obj + sizeof(whNvmFlashLogMetadata), data, data_len);
+    WH_MEMCPY(&obj->meta, meta, sizeof(*meta));
+    WH_MEMCPY((uint8_t*)obj + sizeof(whNvmFlashLogMetadata), data, data_len);
     ctx->directory.header.size +=
         sizeof(whNvmFlashLogMetadata) + PAD_SIZE(data_len);
 
@@ -691,7 +691,7 @@ int wh_NvmFlashLog_Read(void* c, whNvmId id, whNvmSize offset,
         return WH_ERROR_BADARGS;
 
     obj_data = (uint8_t*)obj + sizeof(whNvmFlashLogMetadata) + offset;
-    memcpy(data, obj_data, data_len);
+    WH_MEMCPY(data, obj_data, data_len);
 
     return WH_ERROR_OK;
 }

@@ -37,8 +37,8 @@ int wh_Bench_Mod_Echo(whClientContext* client, whBenchOpContext* benchCtx,
     int      stopRet;
 
     /* Send an entire comm buffer's worth of data */
-    memset(send_buffer, 0xAA, sizeof(send_buffer));
-    memset(recv_buffer, 0x55, sizeof(recv_buffer));
+    WH_MEMSET(send_buffer, 0xAA, sizeof(send_buffer));
+    WH_MEMSET(recv_buffer, 0x55, sizeof(recv_buffer));
     send_len = sizeof(send_buffer);
     recv_len = 0;
 
@@ -79,7 +79,7 @@ int wh_Bench_Mod_Echo(whClientContext* client, whBenchOpContext* benchCtx,
 
         /* Verify response */
         if (recv_len != send_len ||
-            memcmp(recv_buffer, send_buffer, recv_len) != 0) {
+            WH_MEMCMP(recv_buffer, send_buffer, recv_len) != 0) {
             WH_BENCH_PRINTF(
                 "Echo response mismatch! Expected: %.*s, Received: %.*s\n",
                 send_len, send_buffer, recv_len, recv_buffer);

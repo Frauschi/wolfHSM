@@ -171,7 +171,7 @@ int wh_FlashUnit_ReadBytes(const whFlashCb* cb, void* context,
         if (ret == 0) {
             uint32_t this_size = WHFU_BYTES_PER_UNIT - offset_rem;
             if (data_len < this_size) this_size = data_len;
-            memcpy(data, &buffer.bytes[offset_rem], this_size);
+            WH_MEMCPY(data, &buffer.bytes[offset_rem], this_size);
             data += this_size;
             data_len -= this_size;
             offset_units++;
@@ -193,7 +193,7 @@ int wh_FlashUnit_ReadBytes(const whFlashCb* cb, void* context,
     if ((ret == 0) && (data_rem != 0)) {
         ret = wh_FlashUnit_Read(cb, context, offset_units, 1, &buffer.unit);
         if (ret == 0) {
-            memcpy(data, buffer.bytes, data_rem);
+            WH_MEMCPY(data, buffer.bytes, data_rem);
         }
     }
     return ret;
@@ -226,7 +226,7 @@ int wh_FlashUnit_ProgramBytes(const whFlashCb* cb, void* context,
     if ((ret == 0) && (rem != 0)) {
         /* Short writes are filled with erased value */
         data = data + count * WHFU_BYTES_PER_UNIT;
-        memcpy(buffer.bytes, data, rem);
+        WH_MEMCPY(buffer.bytes, data, rem);
         ret = wh_FlashUnit_Program(cb, context,
                 offset + count, 1, &buffer.unit);
     }
