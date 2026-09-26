@@ -181,7 +181,8 @@ void* wh_Utils_memset_flush(void* p, int c, size_t n)
 
 void* wh_Utils_memcpy_invalidate(void* dst, const void* src, size_t n)
 {
-    return WH_MEMCPY(dst, XCACHEINVLDBLK(src, n), n);
+    (void)WH_MEMCPY(dst, XCACHEINVLDBLK(src, n), n);
+    return dst;
 }
 
 void* wh_Utils_memcpy_flush(void* dst, const void* src , size_t n)

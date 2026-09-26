@@ -207,7 +207,9 @@
  *
  *  WH_MEMCPY(dst, src, n), WH_MEMSET(dst, c, n), WH_MEMCMP(a, b, n),
  *  WH_MEMMOVE(dst, src, n) - Memory functions used by the library, for ports
- *      that provide faster implementations than the toolchain's
+ *      that provide faster implementations than the toolchain's. An override
+ *      must behave like the <string.h> function it replaces, return value
+ *      and overlap handling included.
  *      Default: memcpy, memset, memcmp, memmove
  *
  *
