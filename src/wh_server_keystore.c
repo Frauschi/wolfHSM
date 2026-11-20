@@ -722,6 +722,71 @@ static int _ExportXmssPublicKey(whServerContext* server, whKeyId keyId,
 }
 #endif /* WOLFSSL_HAVE_XMSS */
 
+#ifdef WOLFHSM_CFG_DMA
+static int _ExportPublicKeyByAlgo(whServerContext* server, uint16_t algo,
+                                  whKeyId keyId, uint8_t* out, uint16_t* outSz)
+{
+    int ret;
+
+    (void)server;
+    (void)keyId;
+    (void)out;
+    (void)outSz;
+
+    switch (algo) {
+#ifndef NO_RSA
+        case WH_KEY_ALGO_RSA:
+            ret = _ExportRsaPublicKey(server, keyId, out, outSz);
+            break;
+#endif /* !NO_RSA */
+#ifdef HAVE_ECC
+        case WH_KEY_ALGO_ECC:
+            ret = _ExportEccPublicKey(server, keyId, out, outSz);
+            break;
+#endif /* HAVE_ECC */
+#ifdef HAVE_ED25519
+        case WH_KEY_ALGO_ED25519:
+            ret = _ExportEd25519PublicKey(server, keyId, out, outSz);
+            break;
+#endif /* HAVE_ED25519 */
+#if defined(WOLFSSL_HAVE_MLDSA) && defined(WOLFSSL_MLDSA_PUBLIC_KEY)
+        case WH_KEY_ALGO_MLDSA:
+            ret = _ExportMldsaPublicKey(server, keyId, out, outSz);
+            break;
+#endif /* WOLFSSL_HAVE_MLDSA && WOLFSSL_MLDSA_PUBLIC_KEY */
+#ifdef HAVE_CURVE25519
+        case WH_KEY_ALGO_CURVE25519:
+            ret = _ExportCurve25519PublicKey(server, keyId, out, outSz);
+            break;
+#endif /* HAVE_CURVE25519 */
+#ifdef WOLFSSL_HAVE_MLKEM
+        case WH_KEY_ALGO_MLKEM:
+            ret = _ExportMlkemPublicKey(server, keyId, out, outSz);
+            break;
+#endif /* WOLFSSL_HAVE_MLKEM */
+#ifdef WOLFSSL_HAVE_LMS
+        case WH_KEY_ALGO_LMS:
+            ret = _ExportLmsPublicKey(server, keyId, out, outSz);
+            break;
+#endif /* WOLFSSL_HAVE_LMS */
+#ifdef WOLFSSL_HAVE_XMSS
+        case WH_KEY_ALGO_XMSS:
+            ret = _ExportXmssPublicKey(server, keyId, out, outSz);
+            break;
+#endif /* WOLFSSL_HAVE_XMSS */
+        default:
+            ret = WH_ERROR_BADARGS;
+            break;
+    }
+
+    /* The DER encoders report a short output buffer as BUFFER_E */
+    if (ret == BUFFER_E) {
+        ret = WH_ERROR_NOSPACE;
+    }
+    return ret;
+}
+#endif /* WOLFHSM_CFG_DMA */
+
 int wh_Server_KeystoreGetUniqueId(whServerContext* server, whNvmId* inout_id)
 {
     int     ret   = WH_ERROR_OK;
@@ -2926,78 +2991,61 @@ int wh_Server_HandleKeyRequest(whServerContext* server, uint16_t magic,
                                                        &cacheBuf, &cacheMeta);
                 }
                 (void)cacheBuf;
-                (void)stage;
-                (void)stageMax;
 
                 if (ret == WH_ERROR_OK) {
-                    switch (req.algo) {
-#ifndef NO_RSA
-                        case WH_KEY_ALGO_RSA:
-                            ret = _ExportRsaPublicKey(server, serverKeyId,
-                                                      stage, &stageMax);
-                            break;
-#endif /* !NO_RSA */
-#ifdef HAVE_ECC
-                        case WH_KEY_ALGO_ECC:
-                            ret = _ExportEccPublicKey(server, serverKeyId,
-                                                      stage, &stageMax);
-                            break;
-#endif /* HAVE_ECC */
-#ifdef HAVE_ED25519
-                        case WH_KEY_ALGO_ED25519:
-                            ret = _ExportEd25519PublicKey(server, serverKeyId,
-                                                      stage, &stageMax);
-                            break;
-#endif /* HAVE_ED25519 */
-#if defined(WOLFSSL_HAVE_MLDSA) && defined(WOLFSSL_MLDSA_PUBLIC_KEY)
-                        case WH_KEY_ALGO_MLDSA:
-                            ret = _ExportMldsaPublicKey(server, serverKeyId,
-                                                      stage, &stageMax);
-                            break;
-#endif /* WOLFSSL_HAVE_MLDSA && WOLFSSL_MLDSA_PUBLIC_KEY */
-#ifdef HAVE_CURVE25519
-                        case WH_KEY_ALGO_CURVE25519:
-                            ret = _ExportCurve25519PublicKey(server, serverKeyId,
-                                                      stage, &stageMax);
-                            break;
-#endif /* HAVE_CURVE25519 */
-#ifdef WOLFSSL_HAVE_MLKEM
-                        case WH_KEY_ALGO_MLKEM:
-                            ret = _ExportMlkemPublicKey(server, serverKeyId,
-                                                        stage, &stageMax);
-                            break;
-#endif /* WOLFSSL_HAVE_MLKEM */
-#ifdef WOLFSSL_HAVE_LMS
-                        case WH_KEY_ALGO_LMS:
-                            ret = _ExportLmsPublicKey(server, serverKeyId,
-                                                      stage, &stageMax);
-                            break;
-#endif /* WOLFSSL_HAVE_LMS */
-#ifdef WOLFSSL_HAVE_XMSS
-                        case WH_KEY_ALGO_XMSS:
-                            ret = _ExportXmssPublicKey(server, serverKeyId,
-                                                       stage, &stageMax);
-                            break;
-#endif /* WOLFSSL_HAVE_XMSS */
-                        default:
-                            ret = WH_ERROR_BADARGS;
-                            break;
+                    ret = _ExportPublicKeyByAlgo(server, req.algo, serverKeyId,
+                                                 stage, &stageMax);
+                    if (ret == WH_ERROR_OK) {
+                        der_len = stageMax;
+                        if ((uint64_t)der_len > req.key.sz) {
+                            ret = WH_ERROR_NOSPACE;
+                        }
+                        else {
+                            ret = whServerDma_CopyToClient(
+                                server, req.key.addr, stage, der_len,
+                                (whServerDmaFlags){0});
+                            if (ret != WH_ERROR_OK) {
+                                resp.dmaAddrStatus.badAddr.addr = req.key.addr;
+                                resp.dmaAddrStatus.badAddr.sz   = req.key.sz;
+                            }
+                        }
                     }
-                }
-                if (ret == WH_ERROR_OK) {
-                    der_len = stageMax;
-                }
+                    else if ((ret == WH_ERROR_NOSPACE) &&
+                             (req.key.sz > stageMax)
+#ifdef WOLFHSM_CFG_DMA_CUSTOM_CLIENT_COPY
+                             && (server->dma.memCopyCb == NULL)
+#endif
+                    ) {
+                        /* Too big for the comm buffer: encode into the client
+                         * buffer directly */
+                        void*    out = NULL;
+                        uint16_t clientSz;
+                        int      postRet;
 
-                /* Confirm client buffer is big enough, then DMA. */
-                if (ret == WH_ERROR_OK) {
-                    if ((uint64_t)der_len > req.key.sz) {
-                        ret = WH_ERROR_NOSPACE;
-                    }
-                    else {
-                        ret = whServerDma_CopyToClient(
-                            server, req.key.addr, stage, der_len,
+                        clientSz = (req.key.sz > UINT16_MAX)
+                                       ? UINT16_MAX
+                                       : (uint16_t)req.key.sz;
+                        der_len  = clientSz;
+                        ret      = wh_Server_DmaProcessClientAddress(
+                            server, (uintptr_t)req.key.addr, &out, clientSz,
+                            WH_DMA_OPER_CLIENT_WRITE_PRE,
                             (whServerDmaFlags){0});
-                        if (ret != WH_ERROR_OK) {
+                        if (ret == WH_ERROR_OK) {
+                            ret = _ExportPublicKeyByAlgo(
+                                server, req.algo, serverKeyId, (uint8_t*)out,
+                                &der_len);
+                            postRet = wh_Server_DmaProcessClientAddress(
+                                server, (uintptr_t)req.key.addr, &out, clientSz,
+                                WH_DMA_OPER_CLIENT_WRITE_POST,
+                                (whServerDmaFlags){0});
+                            if ((ret == WH_ERROR_OK) &&
+                                (postRet != WH_ERROR_OK)) {
+                                ret                             = postRet;
+                                resp.dmaAddrStatus.badAddr.addr = req.key.addr;
+                                resp.dmaAddrStatus.badAddr.sz   = req.key.sz;
+                            }
+                        }
+                        else {
                             resp.dmaAddrStatus.badAddr.addr = req.key.addr;
                             resp.dmaAddrStatus.badAddr.sz   = req.key.sz;
                         }
