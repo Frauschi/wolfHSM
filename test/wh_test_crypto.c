@@ -14972,6 +14972,7 @@ static int whTestCrypto_MlDsaWolfCrypt(whClientContext* ctx, int devId,
     return ret;
 }
 
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
 static int whTestCrypto_MlDsaClient(whClientContext* ctx, int devId,
                                     WC_RNG* rng, int level)
 {
@@ -15106,9 +15107,11 @@ static int whTestCrypto_MlDsaClient(whClientContext* ctx, int devId,
     wc_MlDsaKey_Free(key);
     return ret;
 }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
 #if defined(WOLFSSL_MLDSA_PUBLIC_KEY) && \
     !defined(WOLFSSL_MLDSA_NO_MAKE_KEY) && !defined(WOLFSSL_NO_ML_DSA_44)
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
 static int whTestCrypto_MlDsaExportPublic(whClientContext* ctx, int devId,
                                           WC_RNG* rng, int level)
 {
@@ -15179,10 +15182,12 @@ static int whTestCrypto_MlDsaExportPublic(whClientContext* ctx, int devId,
     }
     return ret;
 }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
 /* One keygen call caches the private key and returns the public key. Verify
  * the returned public key byte-matches wh_Client_MlDsaExportPublicKey and that
  * it verifies a signature made by the cached private key. */
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
 static int whTestCrypto_MlDsaCacheKeyAndExportPublic(whClientContext* ctx,
                                                      int devId, WC_RNG* rng,
                                                      int level)
@@ -15274,6 +15279,7 @@ static int whTestCrypto_MlDsaCacheKeyAndExportPublic(whClientContext* ctx,
     }
     return ret;
 }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 #endif /* WOLFSSL_MLDSA_PUBLIC_KEY && ML_DSA_44 available */
 
 #ifdef WOLFHSM_CFG_DMA
@@ -15370,6 +15376,19 @@ static int whTestCrypto_MlDsaDmaClient(whClientContext* ctx, int devId,
             ret = -1;
         }
     }
+
+    /* Signing caches the key again, so free this slot first */
+    if (keyImported) {
+        int evict_ret = wh_Client_KeyEvict(ctx, keyId);
+        if (evict_ret != 0) {
+            WH_ERROR_PRINT("Failed to evict ML-DSA key: %d\n", evict_ret);
+            if (ret == 0) {
+                ret = evict_ret;
+            }
+        }
+        keyImported = 0;
+    }
+
     /* Test signing and verification */
     if (ret == 0) {
         byte   msg[] = "Test message to sign";
@@ -15569,6 +15588,7 @@ static int whTestCrypto_MlDsaExportPublicDma(whClientContext* ctx, int devId,
         wc_MlDsaKey_Free(pub);
     }
 
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
     /* Byte-identity check: the generic DMA transport and the non-DMA
      * transport must emit the same public-DER bytes for the same cached
      * key. This cross-validates that the DMA path isn't producing
@@ -15604,6 +15624,7 @@ static int whTestCrypto_MlDsaExportPublicDma(whClientContext* ctx, int devId,
             }
         }
     }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
     /* Negative: a too-small client buffer must yield WH_ERROR_NOSPACE. Pass its
      * real size: sizeof(tinyBuf) is padded to the DMA alignment. */
@@ -15616,6 +15637,27 @@ static int whTestCrypto_MlDsaExportPublicDma(whClientContext* ctx, int devId,
         if (negRet != WH_ERROR_NOSPACE) {
             WH_ERROR_PRINT(
                 "Too-small DMA buffer did not return NOSPACE: %d\n", negRet);
+            ret = -1;
+        }
+    }
+
+    /* Negative: a buffer one byte short of the DER must yield NOSPACE too */
+    if (ret == 0) {
+        WH_DMA_ALIGNED byte
+                 shortBuf[WH_DMA_PAD_SIZE(MLDSA_MAX_PUB_KEY_DER_SIZE)];
+        uint16_t shortSz = 0;
+        int      negRet  = wh_Client_KeyExportPublicDma(
+            ctx, keyId, WH_KEY_ALGO_MLDSA, shortBuf,
+            (uint16_t)MLDSA_MAX_PUB_KEY_DER_SIZE, NULL, 0, &shortSz);
+        if ((negRet == 0) && (shortSz > 0)) {
+            negRet = wh_Client_KeyExportPublicDma(
+                ctx, keyId, WH_KEY_ALGO_MLDSA, shortBuf,
+                (uint16_t)(shortSz - 1), NULL, 0, &shortSz);
+        }
+        if (negRet != WH_ERROR_NOSPACE) {
+            WH_ERROR_PRINT(
+                "One-byte-short DMA buffer did not return NOSPACE: %d\n",
+                negRet);
             ret = -1;
         }
     }
@@ -16306,6 +16348,7 @@ static int whTestCrypto_MlKemWolfCrypt(whClientContext* ctx, int devId,
     return ret;
 }
 
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
 static int whTestCrypto_MlKemClient(whClientContext* ctx, int devId, WC_RNG* rng)
 {
     int    ret      = 0;
@@ -16596,7 +16639,9 @@ static int whTestCrypto_MlKemClient(whClientContext* ctx, int devId, WC_RNG* rng
 
     return ret;
 }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
 static int whTestCrypto_MlKemExportPublic(whClientContext* ctx, int devId,
                                           WC_RNG* rng)
 {
@@ -16742,10 +16787,12 @@ static int whTestCrypto_MlKemExportPublic(whClientContext* ctx, int devId,
     }
     return ret;
 }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
 /* One keygen call caches the private key and returns the public key. Verify
  * the returned public key byte-matches wh_Client_MlKemExportPublicKey and that
  * a KEM encapsulate/decapsulate round-trips against the cached private key. */
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
 static int whTestCrypto_MlKemCacheKeyAndExportPublic(whClientContext* ctx,
                                                      int devId, WC_RNG* rng)
 {
@@ -16872,6 +16919,7 @@ static int whTestCrypto_MlKemCacheKeyAndExportPublic(whClientContext* ctx,
     }
     return ret;
 }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
 #ifdef WOLFHSM_CFG_DMA
 static int whTestCrypto_MlKemExportPublicDma(whClientContext* ctx, int devId,
@@ -16893,7 +16941,7 @@ static int whTestCrypto_MlKemExportPublicDma(whClientContext* ctx, int devId,
         int      cachedInited = 0;
         byte     ct[WC_ML_KEM_MAX_CIPHER_TEXT_SIZE];
         byte     ssEnc[WC_ML_KEM_SS_SZ];
-        byte     ssDec[WC_ML_KEM_SS_SZ];
+        WH_DMA_ALIGNED byte ssDec[WH_DMA_PAD_SIZE(WC_ML_KEM_SS_SZ)];
         word32   ctLen    = sizeof(ct);
         word32   ssEncLen = sizeof(ssEnc);
         uint32_t   ssDecLen = sizeof(ssDec);
@@ -16926,7 +16974,11 @@ static int whTestCrypto_MlKemExportPublicDma(whClientContext* ctx, int devId,
 
         /* Public DMA export must succeed and yield a public-only key. */
         if (ret == 0) {
+#ifdef WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY
+            ret = wc_MlKemKey_Init(pub, levels[i], NULL, INVALID_DEVID);
+#else
             ret = wc_MlKemKey_Init(pub, levels[i], NULL, devId);
+#endif /* WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
             if (ret == 0) {
                 pubInited = 1;
                 ret = wh_Client_MlKemExportPublicKeyDma(ctx, keyId, pub,
@@ -16972,8 +17024,13 @@ static int whTestCrypto_MlKemExportPublicDma(whClientContext* ctx, int devId,
             }
         }
         if (ret == 0) {
+#ifdef WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY
+            ret = wh_Client_MlKemDecapsulateDma(ctx, cached, ct, ctLen, ssDec,
+                                                &ssDecLen);
+#else
             ret = wh_Client_MlKemDecapsulate(ctx, cached, ct, ctLen, ssDec,
                                              &ssDecLen);
+#endif /* WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
             if (ret != 0) {
                 WH_ERROR_PRINT(
                     "Server decapsulate of locally-encapsulated ct (DMA) "
@@ -16988,6 +17045,7 @@ static int whTestCrypto_MlKemExportPublicDma(whClientContext* ctx, int devId,
             }
         }
 
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
         /* Byte-identity check: DMA and non-DMA paths must produce the
          * same public bytes for the same cached key. */
         if (ret == 0) {
@@ -17022,6 +17080,7 @@ static int whTestCrypto_MlKemExportPublicDma(whClientContext* ctx, int devId,
                 }
             }
         }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
         /* Negative: a too-small client buffer must yield WH_ERROR_NOSPACE.
          * Pass its real size: sizeof(tinyBuf) is padded to the DMA alignment.
@@ -17037,6 +17096,27 @@ static int whTestCrypto_MlKemExportPublicDma(whClientContext* ctx, int devId,
                 WH_ERROR_PRINT(
                     "Too-small DMA buffer did not return NOSPACE level=%d: "
                     "%d\n", levels[i], negRet);
+                ret = -1;
+            }
+        }
+
+        /* Negative: a buffer one byte short of the key must yield NOSPACE */
+        if (ret == 0) {
+            WH_DMA_ALIGNED byte
+                     shortBuf[WH_DMA_PAD_SIZE(WC_ML_KEM_MAX_PUBLIC_KEY_SIZE)];
+            uint16_t shortSz = 0;
+            int      negRet  = wh_Client_KeyExportPublicDma(
+                ctx, keyId, WH_KEY_ALGO_MLKEM, shortBuf,
+                (uint16_t)WC_ML_KEM_MAX_PUBLIC_KEY_SIZE, NULL, 0, &shortSz);
+            if ((negRet == 0) && (shortSz > 0)) {
+                negRet = wh_Client_KeyExportPublicDma(
+                    ctx, keyId, WH_KEY_ALGO_MLKEM, shortBuf,
+                    (uint16_t)(shortSz - 1), NULL, 0, &shortSz);
+            }
+            if (negRet != WH_ERROR_NOSPACE) {
+                WH_ERROR_PRINT("One-byte-short DMA buffer did not return "
+                               "NOSPACE level=%d: %d\n",
+                               levels[i], negRet);
                 ret = -1;
             }
         }
@@ -17085,7 +17165,7 @@ static int whTestCrypto_MlKemCacheKeyAndExportPublicDma(whClientContext* ctx,
         word32   refRawSz     = 0;
         byte     ct[WC_ML_KEM_MAX_CIPHER_TEXT_SIZE];
         byte     ssEnc[WC_ML_KEM_SS_SZ];
-        byte     ssDec[WC_ML_KEM_SS_SZ];
+        WH_DMA_ALIGNED byte ssDec[WH_DMA_PAD_SIZE(WC_ML_KEM_SS_SZ)];
         word32   ctLen    = sizeof(ct);
         word32   ssEncLen = sizeof(ssEnc);
         uint32_t   ssDecLen = sizeof(ssDec);
@@ -17156,8 +17236,13 @@ static int whTestCrypto_MlKemCacheKeyAndExportPublicDma(whClientContext* ctx,
             }
         }
         if (ret == 0) {
+#ifdef WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY
+            ret = wh_Client_MlKemDecapsulateDma(ctx, genPub, ct, ctLen, ssDec,
+                                                &ssDecLen);
+#else
             ret = wh_Client_MlKemDecapsulate(ctx, genPub, ct, ctLen, ssDec,
                                              &ssDecLen);
+#endif /* WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
             if (ret != 0) {
                 WH_ERROR_PRINT("Server decapsulate (DMA) failed level=%d %d\n",
                                levels[i], ret);
@@ -17328,6 +17413,18 @@ static int whTestCrypto_MlKemDmaClient(whClientContext* ctx, int devId,
                                levels[i]);
                 ret = -1;
             }
+        }
+
+        /* Encapsulation caches the key again, so free this slot first */
+        if (keyCached) {
+            int evictRet = wh_Client_KeyEvict(ctx, keyId);
+            if ((evictRet != 0) && (ret == 0)) {
+                WH_ERROR_PRINT("Failed ML-KEM DMA evict cached key level=%d "
+                               "ret=%d\n",
+                               levels[i], evictRet);
+                ret = evictRet;
+            }
+            keyCached = 0;
         }
 
         if (ret == 0) {
@@ -20524,6 +20621,7 @@ int whTest_CryptoClientConfig(whClientConfig* config)
                     client, WH_CLIENT_DEVID(client), rng, level);
             }
 
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
             (void)wh_Client_SetDmaMode(client, 0);
             if (ret == 0) {
                 ret = whTestCrypto_MlDsaClient(client, WH_CLIENT_DEVID(client),
@@ -20551,6 +20649,7 @@ int whTest_CryptoClientConfig(whClientConfig* config)
                 }
             }
 #endif
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
 #ifdef WOLFHSM_CFG_DMA
             (void)wh_Client_SetDmaMode(client, 1);
@@ -20622,6 +20721,7 @@ int whTest_CryptoClientConfig(whClientConfig* config)
         }
     }
 
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
     (void)wh_Client_SetDmaMode(client, 0);
     if (ret == 0) {
         ret = whTestCrypto_MlKemClient(client, WH_CLIENT_DEVID(client), rng);
@@ -20642,6 +20742,7 @@ int whTest_CryptoClientConfig(whClientConfig* config)
                 "ML-KEM cache-and-export-public test failed: %d\n", ret);
         }
     }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
 #ifdef WOLFHSM_CFG_DMA
     (void)wh_Client_SetDmaMode(client, 1);
