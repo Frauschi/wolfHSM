@@ -288,6 +288,7 @@ static int _benchMlKemDecaps(whClientContext* client, whBenchOpContext* ctx,
     return _benchMlKemEvictKey(client, keyId, ret);
 }
 
+#if !defined(WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY)
 #define WH_DEFINE_MLKEM_BENCH_NON_DMA_FNS(_Suffix, _Level)                    \
     int wh_Bench_Mod_MlKem##_Suffix##KeyGen(                                  \
         whClientContext* client, whBenchOpContext* ctx, int id, void* params) \
@@ -309,6 +310,41 @@ static int _benchMlKemDecaps(whClientContext* client, whBenchOpContext* ctx,
         (void)params;                                                         \
         return _benchMlKemDecaps(client, ctx, id, _Level, 0);                 \
     }
+#else
+#define WH_DEFINE_MLKEM_BENCH_NON_DMA_FNS(_Suffix, _Level)                    \
+    int wh_Bench_Mod_MlKem##_Suffix##KeyGen(                                  \
+        whClientContext* client, whBenchOpContext* ctx, int id, void* params) \
+    {                                                                         \
+        (void)client;                                                         \
+        (void)ctx;                                                            \
+        (void)id;                                                             \
+        (void)params;                                                         \
+        (void)_Level;                                                         \
+        return WH_ERROR_NOTIMPL;                                              \
+    }                                                                         \
+                                                                              \
+    int wh_Bench_Mod_MlKem##_Suffix##Encaps(                                  \
+        whClientContext* client, whBenchOpContext* ctx, int id, void* params) \
+    {                                                                         \
+        (void)client;                                                         \
+        (void)ctx;                                                            \
+        (void)id;                                                             \
+        (void)params;                                                         \
+        (void)_Level;                                                         \
+        return WH_ERROR_NOTIMPL;                                              \
+    }                                                                         \
+                                                                              \
+    int wh_Bench_Mod_MlKem##_Suffix##Decaps(                                  \
+        whClientContext* client, whBenchOpContext* ctx, int id, void* params) \
+    {                                                                         \
+        (void)client;                                                         \
+        (void)ctx;                                                            \
+        (void)id;                                                             \
+        (void)params;                                                         \
+        (void)_Level;                                                         \
+        return WH_ERROR_NOTIMPL;                                              \
+    }
+#endif /* !WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY */
 
 #ifdef WOLFHSM_CFG_DMA
 #define WH_DEFINE_MLKEM_BENCH_DMA_FNS(_Suffix, _Level)                        \
