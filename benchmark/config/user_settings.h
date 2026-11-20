@@ -166,6 +166,11 @@ extern "C" {
 #define WOLFSSL_NO_ML_DSA_87
 #endif
 
+/* SLH-DSA Options: the small and large parameter sets only add run time */
+#define WOLFSSL_HAVE_SLHDSA
+#define WOLFSSL_SLHDSA_PARAM_NO_192
+#define WOLFSSL_SLHDSA_PARAM_NO_256
+
 /* ML-KEM Options */
 #define WOLFSSL_HAVE_MLKEM
 

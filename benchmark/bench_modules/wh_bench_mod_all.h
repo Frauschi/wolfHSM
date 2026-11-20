@@ -416,6 +416,87 @@ int wh_Bench_Mod_MlDsa87KeyGenDma(whClientContext*  client,
                                   whBenchOpContext* ctx, int id, void* params);
 
 /*
+ * SLH-DSA benchmark module prototypes (wh_bench_mod_slhdsa.c)
+ */
+int wh_Bench_Mod_SlhDsaShake128sSign(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128sSignDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128sVerify(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128sVerifyDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128sKeyGen(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128sKeyGenDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+
+int wh_Bench_Mod_SlhDsaShake128fSign(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128fSignDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128fVerify(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128fVerifyDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128fKeyGen(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake128fKeyGenDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+
+int wh_Bench_Mod_SlhDsaShake192sSign(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192sSignDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192sVerify(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192sVerifyDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192sKeyGen(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192sKeyGenDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+
+int wh_Bench_Mod_SlhDsaShake192fSign(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192fSignDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192fVerify(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192fVerifyDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192fKeyGen(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake192fKeyGenDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+
+int wh_Bench_Mod_SlhDsaShake256sSign(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256sSignDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256sVerify(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256sVerifyDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256sKeyGen(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256sKeyGenDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+
+int wh_Bench_Mod_SlhDsaShake256fSign(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256fSignDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256fVerify(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256fVerifyDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256fKeyGen(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+int wh_Bench_Mod_SlhDsaShake256fKeyGenDma(
+    whClientContext* client, whBenchOpContext* ctx, int id, void* params);
+
+/*
  * ML-KEM benchmark module prototypes (wh_bench_mod_mlkem.c)
  */
 int wh_Bench_Mod_MlKem512KeyGen(whClientContext* client, whBenchOpContext* ctx,

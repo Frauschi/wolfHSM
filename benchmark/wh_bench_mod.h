@@ -40,6 +40,14 @@
 #define WOLFHSM_CFG_BENCH_PK_ITERS 10
 #endif
 
+#ifndef WOLFHSM_CFG_BENCH_SLHDSA_SIGN_ITERS
+#define WOLFHSM_CFG_BENCH_SLHDSA_SIGN_ITERS 2
+#endif
+
+#ifndef WOLFHSM_CFG_BENCH_SLHDSA_KG_ITERS
+#define WOLFHSM_CFG_BENCH_SLHDSA_KG_ITERS 2
+#endif
+
 
 /**
  * @brief Function prototype for a generic benchmark module function.
