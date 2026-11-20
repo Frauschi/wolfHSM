@@ -83,6 +83,11 @@ jobs:
       if: matrix.group == 'pq-dma'
       run: cd test && make clean && make -j DMA=1 DMA_ALIGNED_PADDED_OUTPUT=1 DMA_ALIGN_CHECK=1 ASAN=1 WOLFSSL_DIR=../wolfssl && make run
 
+    # Build and test DMA with a 1280-byte comm buffer, large payloads over DMA only
+    - name: Build and test DMA small comm buffer ASAN
+      if: matrix.group == 'pq-dma'
+      run: cd test && make clean && make -j DMA=1 SMALL_COMM=1 ASAN=1 WOLFSSL_DIR=../wolfssl && make run
+
     # Build and test with NVM flash CRC16 integrity checking enabled
     - name: Build and test NVM flash CRC ASAN
       run: cd test && make clean && make -j NVM_FLASH_CRC=1 ASAN=1 WOLFSSL_DIR=../wolfssl && make run

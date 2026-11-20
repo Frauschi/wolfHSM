@@ -160,6 +160,14 @@ ifeq ($(DMA_ALIGN_CHECK),1)
 	DEF += -DWOLFHSM_CFG_TEST_DMA_ALIGN_CHECK -DWOLFHSM_CFG_DMA_ALIGN=256
 endif
 
+# Comm buffer too small for the large non-DMA payloads (requires DMA=1)
+ifeq ($(SMALL_COMM),1)
+    ifneq ($(DMA),1)
+        $(error "SMALL_COMM=1 requires DMA=1 to be set")
+    endif
+	DEF += -DWOLFHSM_CFG_TEST_SMALL_COMM
+endif
+
 # Enable CRC16 integrity checking in the NVM flash backend
 ifeq ($(NVM_FLASH_CRC),1)
 	DEF += -DWOLFHSM_CFG_NVM_FLASH_CRC16

@@ -33,7 +33,12 @@
 /* #define WOLFHSM_CFG_NO_CRYPTO */
 /* #define WOLFHSM_CFG_SHE_EXTENSION */
 
+#ifdef WOLFHSM_CFG_TEST_SMALL_COMM
+#define WOLFHSM_CFG_COMM_DATA_LEN 1280
+#define WOLFHSM_CFG_TEST_CLIENT_LARGE_DATA_DMA_ONLY
+#else
 #define WOLFHSM_CFG_COMM_DATA_LEN (1024 * 8)
+#endif
 
 /* Disable global keys if WOLFHSM_CFG_TEST_NO_GLOBAL_KEYS is set */
 #ifndef WOLFHSM_CFG_TEST_NO_GLOBAL_KEYS
@@ -49,8 +54,11 @@
 #define WOLFHSM_CFG_DMAADDR_COUNT 8
 #define WOLFHSM_CFG_SERVER_CUSTOMCB_COUNT 6
 
+/* The cert tests read certificates larger than the small comm buffer */
+#ifndef WOLFHSM_CFG_TEST_SMALL_COMM
 #define WOLFHSM_CFG_CERTIFICATE_MANAGER
 #define WOLFHSM_CFG_CERTIFICATE_MANAGER_ACERT
+#endif
 
 /* Enable Image Manager feature */
 #define WOLFHSM_CFG_SERVER_IMG_MGR
